@@ -1,0 +1,54 @@
+#include <sam.h>
+
+#define I2C_SLAVE_ADDRESS 0x12  // Адрес I²C Slave
+
+volatile uint8_t received_data = 0;  // Переменная для хранения принятого байта
+volatile uint8_t has_new_data = 0;  // Флаг наличия новых данных
+
+void configure_sercom5_i2c(void) {
+    // Включаем тактирование для SERCOM5
+    PM->APBCMASK.reg |= PM_APBCMASK_SERCOM5;
+    GCLK->CLKCTRL.reg = GCLK_CLKCTRL_ID(SERCOM5_GCLK_ID_CORE) |
+                        GCLK_CLKCTRL_GEN(0) |
+                        GCLK_CLKCTRL_CLKEN;
+
+    // Настраиваем пины SDA и SCL
+    PORT->Group[0].PINCFG[22].reg = PORT_PINCFG_PMUXEN;  // PA22 (SDA)
+    PORT->Group[0].PINCFG[23].reg = PORT_PINCFG_PMUXEN;  // PA23 (SCL)
+    PORT->Group[0].PMUX[22 / 2].reg = PORT_PMUX_PMUXE_D | PORT_PMUX_PMUXO_D;
+
+    // Настройка I²C в режиме Slave
+    SERCOM5->I2CS.CTRLA.reg = SERCOM_I2CS_CTRLA_MODE_I2C_SLAVE |  // Режим I²C Slave
+                              SERCOM_I2CS_CTRLA_SDAHOLD(2) |      // Задержка SDA
+                              SERCOM_I2CS_CTRLA_ENABLE;
+
+    SERCOM5->I2CS.CTRLB.reg = SERCOM_I2CS_CTRLB_AMODE(0);  // Стандартный адресный режим
+    SERCOM5->I2CS.ADDR.reg = SERCOM_I2CS_ADDR_ADDR(I2C_SLAVE_ADDRESS);
+
+    SERCOM5->I2CS.INTENSET.reg = SERCOM_I2CS_INTENSET_PREC |  // Принятие данных
+                                 SERCOM_I2CS_INTENSET_AMATCH; // Совпадение адреса
+
+    NVIC_EnableIRQ(SERCOM5_IRQn);
+}
+
+// Обработчик прерываний
+void SERCOM5_Handler(void) {
+    if (SERCOM5->I2CS.INTFLAG.bit.AMATCH) {
+        SERCOM5->I2CS.INTFLAG.reg = SERCOM_I2CS_INTFLAG_AMATCH;
+        has_new_data = 0;  // Сбрасываем флаг данных
+    }
+
+    if (SERCOM5->I2CS.INTFLAG.bit.PREC) {
+        SERCOM5->I2CS.INTFLAG.reg = SERCOM_I2CS_INTFLAG_PREC;
+    }
+
+    if (SERCOM5->I2CS.INTFLAG.bit.DRDY) {
+        received_data = SERCOM5->I2CS.DATA.reg;  // Получаем данные
+        has_new_data = 1;  // Устанавливаем флаг наличия данных
+    }
+
+    if (SERCOM5->I2CS.INTFLAG.bit.SDIR && has_new_data) {
+        SERCOM5->I2CS.DATA.reg = received_data;  // Отправляем эхо
+        has_new_data = 0;
+    }
+}
