@@ -1,0 +1,108 @@
+#include "sam.h"
+
+// Буфер для приёма данных по I2C
+volatile uint8_t received_data = 0;
+volatile uint8_t data_ready = 0;
+
+// === Инициализация I²C Slave на SERCOM5 ===
+void init_i2c_slave(void) {
+    // Включаем тактирование для SERCOM5
+    PM->APBCMASK.reg |= PM_APBCMASK_SERCOM5;
+
+    // Настраиваем GCLK для SERCOM5
+    GCLK->CLKCTRL.reg = GCLK_CLKCTRL_ID(SERCOM5_GCLK_ID_CORE) |
+                        GCLK_CLKCTRL_GEN(0) | // Используем генератор 0
+                        GCLK_CLKCTRL_CLKEN;
+
+    // Настраиваем пины SDA и SCL
+    PORT->Group[0].PINCFG[22].reg = PORT_PINCFG_PMUXEN | PORT_PINCFG_PULLEN; // PA22 (SDA)
+    PORT->Group[0].PINCFG[23].reg = PORT_PINCFG_PMUXEN | PORT_PINCFG_PULLEN; // PA23 (SCL)
+    PORT->Group[0].PMUX[11].reg = PORT_PMUX_PMUXE(0x2) | PORT_PMUX_PMUXO(0x2); // SERCOM_ALT
+
+    // Настройка SERCOM5 в режиме I2C Slave
+    SERCOM5->I2CS.CTRLA.reg = SERCOM_I2CS_CTRLA_MODE_I2C_SLAVE |
+                              SERCOM_I2CS_CTRLA_SDAHOLD(0x2); // Удержание SDA
+
+    SERCOM5->I2CS.ADDR.reg = SERCOM_I2CS_ADDR_ADDR(0x12); // Адрес Slave: 0x12
+
+    // Включаем прерывания
+    SERCOM5->I2CS.INTENSET.reg = SERCOM_I2CS_INTENSET_DRDY; // Прерывание на готовность данных
+    SERCOM5->I2CS.CTRLA.reg |= SERCOM_I2CS_CTRLA_ENABLE;    // Включаем SERCOM5
+
+    NVIC_EnableIRQ(SERCOM5_IRQn); // Разрешаем прерывания от SERCOM5
+}
+
+// === Инициализация UART ===
+void init_uart(Sercom *sercom, uint32_t baudrate, uint8_t tx_pin, uint8_t tx_mux) {
+    // Включаем тактирование для соответствующего SERCOM
+    if (sercom == SERCOM0) PM->APBCMASK.reg |= PM_APBCMASK_SERCOM0;
+    if (sercom == SERCOM1) PM->APBCMASK.reg |= PM_APBCMASK_SERCOM1;
+    if (sercom == SERCOM2) PM->APBCMASK.reg |= PM_APBCMASK_SERCOM2;
+    if (sercom == SERCOM3) PM->APBCMASK.reg |= PM_APBCMASK_SERCOM3;
+    if (sercom == SERCOM4) PM->APBCMASK.reg |= PM_APBCMASK_SERCOM4;
+
+    // Настраиваем GCLK для SERCOM
+    GCLK->CLKCTRL.reg = GCLK_CLKCTRL_ID(sercom == SERCOM0 ? SERCOM0_GCLK_ID_CORE :
+                                        sercom == SERCOM1 ? SERCOM1_GCLK_ID_CORE :
+                                        sercom == SERCOM2 ? SERCOM2_GCLK_ID_CORE :
+                                        sercom == SERCOM3 ? SERCOM3_GCLK_ID_CORE :
+                                        SERCOM4_GCLK_ID_CORE) |
+                        GCLK_CLKCTRL_GEN(0) | GCLK_CLKCTRL_CLKEN;
+
+    // Настраиваем TX пин
+    PORT->Group[tx_pin / 32].PINCFG[tx_pin % 32].reg = PORT_PINCFG_PMUXEN;
+    PORT->Group[tx_pin / 32].PMUX[tx_pin / 2].reg |= tx_mux;
+
+    // Настраиваем SERCOM в режиме UART
+    sercom->USART.CTRLA.reg = SERCOM_USART_CTRLA_DORD |
+                              SERCOM_USART_CTRLA_MODE_USART_INT_CLK |
+                              SERCOM_USART_CTRLA_RXPO(0x1) | // RX на PAD[1]
+                              SERCOM_USART_CTRLA_TXPO(0x0); // TX на PAD[0]
+
+    sercom->USART.BAUD.reg = 65536 - ((65536 * 16.0f * baudrate) / 48000000);
+
+    sercom->USART.CTRLB.reg = SERCOM_USART_CTRLB_TXEN; // Включаем TX
+    sercom->USART.CTRLA.reg |= SERCOM_USART_CTRLA_ENABLE; // Включаем UART
+}
+
+// === Прерывание для I²C ===
+void SERCOM5_Handler(void) {
+    if (SERCOM5->I2CS.INTFLAG.bit.DRDY) {
+        received_data = SERCOM5->I2CS.DATA.reg; // Читаем данные
+        data_ready = 1;                         // Устанавливаем флаг
+    }
+}
+
+// === Отправка данных на UART ===
+void uart_send(Sercom *sercom, uint8_t data) {
+    while (!(sercom->USART.INTFLAG.bit.DRE)); // Ожидаем, пока буфер готов
+    sercom->USART.DATA.reg = data;           // Отправляем данные
+}
+
+// === Основной цикл ===
+int main(void) {
+    SystemInit();
+
+    // Инициализируем I²C (SERCOM5)
+    init_i2c_slave();
+
+    // Инициализируем UART (на всех доступных SERCOM)
+    init_uart(SERCOM0, 9600, 2, PORT_PMUX_PMUXE_C_Val); // TX SERCOM0 на PA02
+    init_uart(SERCOM1, 9600, 6, PORT_PMUX_PMUXE_C_Val); // TX SERCOM1 на PA06
+    init_uart(SERCOM2, 9600, 10, PORT_PMUX_PMUXE_C_Val); // TX SERCOM2 на PA10
+    init_uart(SERCOM3, 9600, 14, PORT_PMUX_PMUXE_C_Val); // TX SERCOM3 на PA14
+    init_uart(SERCOM4, 9600, 18, PORT_PMUX_PMUXE_C_Val); // TX SERCOM4 на PA18
+
+    while (1) {
+        if (data_ready) {
+            // Отправляем данные на все UART
+            uart_send(SERCOM0, received_data);
+            uart_send(SERCOM1, received_data);
+            uart_send(SERCOM2, received_data);
+            uart_send(SERCOM3, received_data);
+            uart_send(SERCOM4, received_data);
+
+            data_ready = 0; // Сбрасываем флаг
+        }
+    }
+}
