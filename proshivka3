@@ -1,0 +1,80 @@
+#include <asf.h>
+
+#define I2C_SLAVE_ADDRESS 0x12
+
+// Буфер для хранения полученных данных
+volatile uint8_t received_data = 0;
+volatile bool data_ready = false;
+
+// === Callback для I²C Slave ===
+static void i2c_slave_read_callback(struct i2c_slave_module *const module) {
+    // Сохраняем принятые данные
+    received_data = i2c_slave_read_byte(module);
+    data_ready = true;
+}
+
+// === Инициализация I²C Slave ===
+static void configure_i2c_slave(void) {
+    struct i2c_slave_config config_i2c;
+    i2c_slave_get_config_defaults(&config_i2c);
+
+    config_i2c.address = I2C_SLAVE_ADDRESS;
+    config_i2c.address_mode = I2C_SLAVE_ADDRESS_MODE_MASK;
+    config_i2c.pinmux_pad0 = PINMUX_PA22C_SERCOM5_PAD0; // SDA
+    config_i2c.pinmux_pad1 = PINMUX_PA23C_SERCOM5_PAD1; // SCL
+
+    i2c_slave_init(&i2c_instance, SERCOM5, &config_i2c);
+    i2c_slave_enable(&i2c_instance);
+
+    i2c_slave_register_callback(&i2c_instance, i2c_slave_read_callback, I2C_SLAVE_CALLBACK_READ_COMPLETE);
+    i2c_slave_enable_callback(&i2c_instance, I2C_SLAVE_CALLBACK_READ_COMPLETE);
+}
+
+// === Инициализация UART ===
+static void configure_uart(struct usart_module *usart_instance, Sercom *sercom, uint32_t baudrate, uint32_t pinmux_pad0) {
+    struct usart_config config_uart;
+    usart_get_config_defaults(&config_uart);
+
+    config_uart.baudrate = baudrate;
+    config_uart.mux_setting = USART_RX_1_TX_0_XCK_1; // RX=PAD1, TX=PAD0
+    config_uart.pinmux_pad0 = pinmux_pad0;
+    config_uart.pinmux_pad1 = PINMUX_UNUSED; // RX не используется
+
+    while (usart_init(usart_instance, sercom, &config_uart) != STATUS_OK);
+    usart_enable(usart_instance);
+}
+
+// === Отправка данных через UART ===
+static void uart_send_data(struct usart_module *usart_instance, uint8_t data) {
+    usart_write_wait(usart_instance, data);
+}
+
+// === Основной цикл ===
+int main(void) {
+    system_init();
+
+    // Инициализация I²C
+    configure_i2c_slave();
+
+    // Инициализация UART для всех доступных SERCOM
+    struct usart_module usart_instance_0, usart_instance_1, usart_instance_2, usart_instance_3, usart_instance_4;
+
+    configure_uart(&usart_instance_0, SERCOM0, 19200, PINMUX_PA04D_SERCOM0_PAD0);
+    configure_uart(&usart_instance_1, SERCOM1, 19200, PINMUX_PA06D_SERCOM1_PAD0);
+    configure_uart(&usart_instance_2, SERCOM2, 19200, PINMUX_PA08D_SERCOM2_PAD0);
+    configure_uart(&usart_instance_3, SERCOM3, 19200, PINMUX_PA10D_SERCOM3_PAD0);
+    configure_uart(&usart_instance_4, SERCOM4, 19200, PINMUX_PA14D_SERCOM4_PAD0);
+
+    while (1) {
+        if (data_ready) {
+            // Отправляем данные на все UART
+            uart_send_data(&usart_instance_0, received_data);
+            uart_send_data(&usart_instance_1, received_data);
+            uart_send_data(&usart_instance_2, received_data);
+            uart_send_data(&usart_instance_3, received_data);
+            uart_send_data(&usart_instance_4, received_data);
+
+            data_ready = false; // Сбрасываем флаг
+        }
+    }
+}
