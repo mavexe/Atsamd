@@ -1,3 +1,5 @@
+#include "sam.h"
+
 #define I2C_SLAVE_ADDRESS 0x10 // Адрес I2C Slave в шестнадцатеричной системе (16 в десятичной)
 
 // Настройка UART для всех доступных SERCOM
@@ -16,11 +18,11 @@ void configure_sercom_as_uart(Sercom *sercom, uint32_t baud_rate, uint8_t rx_pin
 
     // Настройка SERCOM как UART
     sercom->USART.CTRLA.reg = SERCOM_USART_CTRLA_MODE_USART_INT_CLK |
-                               SERCOM_USART_CTRLA_RXPO(1) |
-                               SERCOM_USART_CTRLA_TXPO(0);
+                               SERCOM_USART_CTRLA_RXPO(1) | // RX на PAD[1]
+                               (0x0 << SERCOM_USART_CTRLA_TXPO_Pos); // TX на PAD[0]
     sercom->USART.BAUD.reg = (uint16_t)((float)48000000 / (16 * baud_rate));
     sercom->USART.CTRLA.reg |= SERCOM_USART_CTRLA_ENABLE;
-    while (sercom->USART.SYNCBUSY.bit.ENABLE);
+    while (!(sercom->USART.INTFLAG.bit.DRE));
 }
 
 // Функция передачи данных через UART
@@ -48,7 +50,7 @@ void configure_sercom5_as_i2c_slave(void) {
                                SERCOM_I2CS_CTRLA_SDAHOLD(3);
     SERCOM5->I2CS.ADDR.reg = SERCOM_I2CS_ADDR_ADDR(I2C_SLAVE_ADDRESS);
     SERCOM5->I2CS.CTRLA.reg |= SERCOM_I2CS_CTRLA_ENABLE;
-    while (SERCOM5->I2CS.SYNCBUSY.bit.ENABLE);
+    while (!(SERCOM5->I2CS.INTFLAG.bit.DRDY));
 }
 
 int main(void) {
