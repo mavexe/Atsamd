@@ -1,8 +1,6 @@
 #include "sam.h"
 
-#define I2C_SLAVE_ADDRESS 0x10 // Адрес I2C Slave в шестнадцатеричной системе (16 в десятичной)
-
-// Настройка UART для всех доступных SERCOM
+// Функция для настройки SERCOM как UART
 void configure_sercom_as_uart(Sercom *sercom, uint32_t baud_rate, uint8_t rx_pin, uint8_t tx_pin) {
     // Включение питания для SERCOM
     PM->APBCMASK.reg |= (1 << (((uint32_t)sercom - (uint32_t)SERCOM0) / 0x400));
@@ -22,35 +20,13 @@ void configure_sercom_as_uart(Sercom *sercom, uint32_t baud_rate, uint8_t rx_pin
                                (0x0 << SERCOM_USART_CTRLA_TXPO_Pos); // TX на PAD[0]
     sercom->USART.BAUD.reg = (uint16_t)((float)48000000 / (16 * baud_rate));
     sercom->USART.CTRLA.reg |= SERCOM_USART_CTRLA_ENABLE;
-    while (!(sercom->USART.INTFLAG.bit.DRE));
+    while (!(sercom->USART.INTFLAG.bit.DRE)); // Ожидание готовности
 }
 
 // Функция передачи данных через UART
 void transmit_data_over_uart(Sercom *sercom, uint8_t data) {
     while (!(sercom->USART.INTFLAG.bit.DRE)); // Ожидание готовности
     sercom->USART.DATA.reg = data;
-}
-
-// Настройка SERCOM5 как I2C Slave
-void configure_sercom5_as_i2c_slave(void) {
-    // Включение питания для SERCOM5
-    PM->APBCMASK.reg |= PM_APBCMASK_SERCOM5;
-    GCLK->CLKCTRL.reg = GCLK_CLKCTRL_ID(SERCOM5_GCLK_ID_CORE) |
-                        GCLK_CLKCTRL_GEN(0) |
-                        GCLK_CLKCTRL_CLKEN;
-    while (GCLK->STATUS.bit.SYNCBUSY);
-
-    // Настройка пинов SDA и SCL
-    PORT->Group[1].PINCFG[16].reg |= PORT_PINCFG_PMUXEN; // PB16 (SDA)
-    PORT->Group[1].PINCFG[17].reg |= PORT_PINCFG_PMUXEN; // PB17 (SCL)
-    PORT->Group[1].PMUX[8].reg = PORT_PMUX_PMUXE(2) | PORT_PMUX_PMUXO(2); // SERCOM5
-
-    // Настройка SERCOM5 в режиме I2C Slave
-    SERCOM5->I2CS.CTRLA.reg = SERCOM_I2CS_CTRLA_MODE_I2C_SLAVE |
-                               SERCOM_I2CS_CTRLA_SDAHOLD(3);
-    SERCOM5->I2CS.ADDR.reg = SERCOM_I2CS_ADDR_ADDR(I2C_SLAVE_ADDRESS);
-    SERCOM5->I2CS.CTRLA.reg |= SERCOM_I2CS_CTRLA_ENABLE;
-    while (!(SERCOM5->I2CS.INTFLAG.bit.DRDY));
 }
 
 int main(void) {
@@ -63,22 +39,20 @@ int main(void) {
     configure_sercom_as_uart(SERCOM3, 19200, 8, 9); // PA08, PA09
     configure_sercom_as_uart(SERCOM4, 19200, 10, 11); // PA10, PA11
 
-    // Настройка SERCOM5 как I2C Slave
-    configure_sercom5_as_i2c_slave();
-
-    uint8_t data;
+    uint8_t test_message[] = "Hello, UART!\n";
+    uint8_t i;
 
     while (1) {
-        // Проверка на получение данных по I2C
-        if (SERCOM5->I2CS.INTFLAG.bit.DRDY) {
-            data = SERCOM5->I2CS.DATA.reg;
-
-            // Передача данных через все UART
-            transmit_data_over_uart(SERCOM0, data);
-            transmit_data_over_uart(SERCOM1, data);
-            transmit_data_over_uart(SERCOM2, data);
-            transmit_data_over_uart(SERCOM3, data);
-            transmit_data_over_uart(SERCOM4, data);
+        // Передача тестового сообщения на все UART
+        for (i = 0; i < sizeof(test_message) - 1; i++) {
+            transmit_data_over_uart(SERCOM0, test_message[i]);
+            transmit_data_over_uart(SERCOM1, test_message[i]);
+            transmit_data_over_uart(SERCOM2, test_message[i]);
+            transmit_data_over_uart(SERCOM3, test_message[i]);
+            transmit_data_over_uart(SERCOM4, test_message[i]);
         }
+
+        // Небольшая задержка
+        for (volatile uint32_t delay = 0; delay < 100000; delay++);
     }
 }
