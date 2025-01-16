@@ -1,42 +1,53 @@
 #include "sam.h"
 
-void configure_uart_sercom0(uint32_t baud_rate, uint8_t rx_pin, uint8_t tx_pin) {
-    // Включение тактирования для SERCOM0
-    PM->APBCMASK.reg |= PM_APBCMASK_SERCOM0;
-    GCLK->CLKCTRL.reg = GCLK_CLKCTRL_ID_SERCOM0_CORE |
+// Функция настройки SERCOM в режиме UART
+void configure_uart(Sercom *sercom, uint32_t baud_rate, uint8_t rx_pin, uint8_t tx_pin) {
+    // Включение тактирования для SERCOM
+    PM->APBCMASK.reg |= (1 << (((uint32_t)sercom - (uint32_t)SERCOM0) / 0x400));
+    GCLK->CLKCTRL.reg = GCLK_CLKCTRL_ID((((uint32_t)sercom - (uint32_t)SERCOM0) / 0x400)) |
                         GCLK_CLKCTRL_GEN(0) |
                         GCLK_CLKCTRL_CLKEN;
     while (GCLK->STATUS.bit.SYNCBUSY);
 
-    // Настройка пинов RX и TX для SERCOM0
+    // Настройка пинов RX и TX
     PORT->Group[rx_pin / 32].PINCFG[rx_pin % 32].reg |= PORT_PINCFG_PMUXEN;
     PORT->Group[tx_pin / 32].PINCFG[tx_pin % 32].reg |= PORT_PINCFG_PMUXEN;
     PORT->Group[rx_pin / 32].PMUX[rx_pin % 32 / 2].reg = PORT_PMUX_PMUXE(3) | PORT_PMUX_PMUXO(3);
 
-    // Настройка SERCOM0 в режиме UART
-    SERCOM0->USART.CTRLA.reg = SERCOM_USART_CTRLA_MODE_USART_INT_CLK |
+    // Настройка SERCOM в режиме UART
+    sercom->USART.CTRLA.reg = SERCOM_USART_CTRLA_MODE_USART_INT_CLK |
                                SERCOM_USART_CTRLA_RXPO(1) | // RX на PAD[1]
                                (0x0 << SERCOM_USART_CTRLA_TXPO_Pos); // TX на PAD[0]
-    SERCOM0->USART.BAUD.reg = (uint16_t)(1000000 / (16 * baud_rate)); // BAUD = 3 для 19200
-    SERCOM0->USART.CTRLA.reg |= SERCOM_USART_CTRLA_ENABLE;
-    while (SERCOM0->USART.SYNCBUSY.bit.ENABLE);
+    sercom->USART.BAUD.reg = (uint16_t)(1000000 / (16 * baud_rate)); // BAUD = 3 для 19200
+    sercom->USART.CTRLA.reg |= SERCOM_USART_CTRLA_ENABLE;
+    while (sercom->USART.SYNCBUSY.bit.ENABLE);
 }
 
 // Функция передачи данных через UART
-void transmit_data_sercom0(uint8_t data) {
-    while (!(SERCOM0->USART.INTFLAG.bit.DRE)); // Ожидание готовности передатчика
-    SERCOM0->USART.DATA.reg = data; // Передача данных
+void transmit_data(Sercom *sercom, uint8_t data) {
+    while (!(sercom->USART.INTFLAG.bit.DRE)); // Ожидание готовности передатчика
+    sercom->USART.DATA.reg = data; // Передача данных
 }
 
 int main(void) {
     SystemInit();
 
-    // Настройка UART на SERCOM0
-    configure_uart_sercom0(19200, 8, 10); // SERCOM0: RX=PA08, TX=PA10
+    // Настройка всех доступных SERCOM как UART
+    configure_uart(SERCOM0, 19200, 8, 10); // SERCOM0: RX=PA08, TX=PA10
+    configure_uart(SERCOM1, 19200, 16, 18); // SERCOM1: RX=PA16, TX=PA18
+    configure_uart(SERCOM2, 19200, 12, 14); // SERCOM2: RX=PA12, TX=PA14
+    configure_uart(SERCOM3, 19200, 22, 24); // SERCOM3: RX=PA22, TX=PA24
+    configure_uart(SERCOM4, 19200, 8, 10);  // SERCOM4: RX=PB08, TX=PB10
+    configure_uart(SERCOM5, 19200, 30, 2);  // SERCOM5: RX=PA30, TX=PB02
 
-    // Постоянная отправка символа '1'
+    // Постоянная отправка символа '1' через все SERCOM
     while (1) {
-        transmit_data_sercom0('1');
+        transmit_data(SERCOM0, '1');
+        transmit_data(SERCOM1, '1');
+        transmit_data(SERCOM2, '1');
+        transmit_data(SERCOM3, '1');
+        transmit_data(SERCOM4, '1');
+        transmit_data(SERCOM5, '1');
 
         // Задержка перед следующей отправкой
         for (volatile uint32_t delay = 0; delay < 100000; delay++);
