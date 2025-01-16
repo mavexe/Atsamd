@@ -1,31 +1,29 @@
 #include "sam.h"
 
 void initUART(void) {
-    // Настройка GCLK для SERCOM
-    GCLK->CLKCTRL.reg = GCLK_CLKCTRL_ID(SERCOM5_GCLK_ID_CORE) | 
-                        GCLK_CLKCTRL_GEN(0) | // GCLK0, настроен на 1 МГц
+    // Настройка GCLK для SERCOM5
+    GCLK->CLKCTRL.reg = GCLK_CLKCTRL_ID(SERCOM5_GCLK_ID_CORE) |
+                        GCLK_CLKCTRL_GEN(0) | // GCLK0 настроен на 1 МГц
                         GCLK_CLKCTRL_CLKEN;
     while (GCLK->STATUS.bit.SYNCBUSY); // Ждем синхронизации
 
-    // Настройка PA20 (Rx) и PA21 (Tx) для SERCOM5
-    PORT->Group[0].PMUX[10].reg = PORT_PMUX_PMUXE_D | PORT_PMUX_PMUXO_D; // PA20/PA21: SERCOM5
+    // Настройка портов PA20 (RX) и PA21 (TX)
+    PORT->Group[0].PMUX[10].reg = PORT_PMUX_PMUXE_D | PORT_PMUX_PMUXO_D; // PA20, PA21: SERCOM5
     PORT->Group[0].PINCFG[20].reg = PORT_PINCFG_PMUXEN;
     PORT->Group[0].PINCFG[21].reg = PORT_PINCFG_PMUXEN;
 
     // Настройка SERCOM5 в режиме USART
-    SERCOM5->USART.CTRLA.reg = SERCOM_USART_CTRLA_MODE_USART_INT_CLK | 
-                                SERCOM_USART_CTRLA_RXPO(3) | // PA20 (Rx)
-                                SERCOM_USART_CTRLA_TXPO(1);  // PA21 (Tx)
-
+    SERCOM5->USART.CTRLA.reg = SERCOM_USART_CTRLA_MODE_USART_INT_CLK |
+                                (1 << SERCOM_USART_CTRLA_TXPO_Pos) | // TXPO = 1 (PA21)
+                                SERCOM_USART_CTRLA_RXPO(3);         // RXPO = 3 (PA20)
     SERCOM5->USART.CTRLB.reg = SERCOM_USART_CTRLB_TXEN | SERCOM_USART_CTRLB_RXEN;
-    while (SERCOM5->USART.CTRLB.bit.RXEN == 0 || SERCOM5->USART.CTRLB.bit.TXEN == 0); // Ждем включения
 
     // Настройка скорости передачи 19200 бод
     SERCOM5->USART.BAUD.reg = 65536 - (65536 * 19200 / 1000000);
 
     // Включение SERCOM
     SERCOM5->USART.CTRLA.reg |= SERCOM_USART_CTRLA_ENABLE;
-    while (SERCOM5->USART.STATUS.bit.SYNCBUSY); // Ждем завершения настройки
+    while (SERCOM5->USART.STATUS.bit.SYNCBUSY); // Ждем завершения включения
 }
 
 void sendData(uint8_t data) {
@@ -34,11 +32,11 @@ void sendData(uint8_t data) {
 }
 
 int main(void) {
-    SystemInit(); // Инициализация системных настроек
-    initUART();   // Инициализация UART
+    SystemInit(); // Инициализация системы
+    initUART();   // Настройка UART
 
     while (1) {
-        sendData('A'); // Передаем символ 'A'
+        sendData('A'); // Отправка символа 'A'
         for (volatile uint32_t i = 0; i < 100000; i++); // Задержка
     }
 }
