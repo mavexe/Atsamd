@@ -5,7 +5,7 @@ void initUART(void) {
     GCLK->CLKCTRL.reg = GCLK_CLKCTRL_ID(SERCOM5_GCLK_ID_CORE) |
                         GCLK_CLKCTRL_GEN(0) | // GCLK0: 1 МГц
                         GCLK_CLKCTRL_CLKEN;
-    while (GCLK->STATUS.bit.SYNCBUSY); // Ожидание синхронизации GCLK
+    while (GCLK->STATUS.bit.SYNCBUSY); // Ожидание завершения синхронизации
 
     // Настройка портов PA20 (RX) и PA21 (TX)
     PORT->Group[0].PMUX[10].reg = PORT_PMUX_PMUXE_D | PORT_PMUX_PMUXO_D; // PA20 и PA21: SERCOM5
@@ -13,15 +13,12 @@ void initUART(void) {
     PORT->Group[0].PINCFG[21].reg = PORT_PINCFG_PMUXEN; // Включение мультиплексирования для PA21
 
     // Настройка SERCOM5 в режиме USART
-    SERCOM5->USART.CTRLA.reg = SERCOM_USART_CTRLA_MODE_USART_INT_CLK | // Используем внутренний тактовый сигнал
-                                SERCOM_USART_CTRLA_RXPO(3) |           // RX на PAD[3] (PA20)
-                                SERCOM_USART_CTRLA_TXPO(1);            // TX на PAD[1] (PA21)
+    SERCOM5->USART.CTRLA.reg = (1 << 2) | // TXPO = 1 (TX на PAD[1] - PA21)
+                                (3 << 20) | // RXPO = 3 (RX на PAD[3] - PA20)
+                                SERCOM_USART_CTRLA_MODE_USART_INT_CLK; // Используем внутренний тактовый сигнал
 
     SERCOM5->USART.CTRLB.reg = SERCOM_USART_CTRLB_TXEN |  // Включаем передатчик
                                 SERCOM_USART_CTRLB_RXEN;  // Включаем приемник
-
-    // Ожидание завершения настройки CTRLB
-    while (SERCOM5->USART.CTRLB.bit.TXEN == 0 || SERCOM5->USART.CTRLB.bit.RXEN == 0);
 
     // Установка скорости передачи 19200 бод
     SERCOM5->USART.BAUD.reg = 65536 - (65536 * 19200 / 1000000);
@@ -32,13 +29,13 @@ void initUART(void) {
 
 void echoUART(void) {
     // Ожидаем доступности данных для чтения
-    while (!SERCOM5->USART.INTFLAG.bit.RXC);
+    while (!(SERCOM5->USART.INTFLAG.bit.RXC));
 
     // Читаем принятые данные
     uint8_t receivedData = SERCOM5->USART.DATA.reg;
 
     // Ожидаем, пока передатчик освободится
-    while (!SERCOM5->USART.INTFLAG.bit.DRE);
+    while (!(SERCOM5->USART.INTFLAG.bit.DRE));
 
     // Отправляем данные обратно
     SERCOM5->USART.DATA.reg = receivedData;
