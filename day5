@@ -11,7 +11,7 @@ void init_uart(void) {
     PORT->Group[0].PINCFG[20].reg = PORT_PINCFG_PMUXEN; // Включение мультиплексирования для PA20
     PORT->Group[0].PINCFG[21].reg = PORT_PINCFG_PMUXEN; // Включение мультиплексирования для PA21
 
-    PORT->Group[0].PMUX[10].reg = PORT_PMUX_PMUXE(2) | PORT_PMUX_PMUXO(2); // SERCOM5: PA20 (PAD[2]), PA21 (PAD[3])
+    PORT->Group[0].PMUX[10].reg = PORT_PMUX_PMUXE(PORT_PMUX_PMUXE_C_Val) | PORT_PMUX_PMUXO(PORT_PMUX_PMUXO_C_Val); // SERCOM5: PA20 (PAD[2]), PA21 (PAD[3])
 
     // Конфигурация SERCOM5 для UART
     SERCOM5->USART.CTRLA.reg = SERCOM_USART_CTRLA_MODE_USART_INT_CLK | // Внутренний источник тактирования
@@ -21,14 +21,14 @@ void init_uart(void) {
 
     SERCOM5->USART.CTRLB.reg = SERCOM_USART_CTRLB_RXEN | // Включение приемника
                                SERCOM_USART_CTRLB_TXEN; // Включение передатчика
-    while (SERCOM5->USART.STATUS.reg & SERCOM_USART_STATUS_SYNCBUSY); // Ожидание завершения синхронизации
+    while (SERCOM5->USART.SYNCBUSY.bit.CTRLB); // Ожидание завершения синхронизации
 
     // Установка скорости передачи данных (19200 бод при 1 MHz)
-    SERCOM5->USART.BAUD.reg = 5208; // Формула: BAUD = (f_ref / (16 * f_baud)) - 1
+    SERCOM5->USART.BAUD.reg = (1000000 / (16 * 19200)) - 1; // Формула: BAUD = (f_ref / (16 * f_baud)) - 1
 
     // Включение UART
     SERCOM5->USART.CTRLA.reg |= SERCOM_USART_CTRLA_ENABLE;
-    while (SERCOM5->USART.STATUS.reg & SERCOM_USART_STATUS_SYNCBUSY); // Ожидание завершения синхронизации
+    while (SERCOM5->USART.SYNCBUSY.bit.ENABLE); // Ожидание завершения синхронизации
 }
 
 void uart_echo(void) {
