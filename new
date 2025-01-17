@@ -1,4 +1,7 @@
+#include <sam.h>
+
 #define I2C_SLAVE_ADDRESS 0x10
+#define SYSTEM_CORE_CLOCK 1000000 // 1 MHz
 
 void init_i2c_slave(void) {
     // Enable GCLK for SERCOM1
@@ -14,7 +17,7 @@ void init_i2c_slave(void) {
 
     // Reset SERCOM1
     SERCOM1->I2CS.CTRLA.reg = SERCOM_I2CS_CTRLA_SWRST;
-    while (SERCOM1->I2CS.SYNCBUSY.bit.SWRST);
+    while (SERCOM1->I2CS.CTRLA.bit.SWRST);
 
     // Configure SERCOM1 as I2C Slave
     SERCOM1->I2CS.CTRLA.reg = SERCOM_I2CS_CTRLA_MODE_I2C_SLAVE;
@@ -38,24 +41,22 @@ void init_uart(void) {
 
     // Reset SERCOM5
     SERCOM5->USART.CTRLA.reg = SERCOM_USART_CTRLA_SWRST;
-    while (SERCOM5->USART.SYNCBUSY.bit.SWRST);
+    while (SERCOM5->USART.CTRLA.bit.SWRST);
 
     // Configure SERCOM5 as UART
     SERCOM5->USART.CTRLA.reg = SERCOM_USART_CTRLA_DORD | // LSB first
                                SERCOM_USART_CTRLA_MODE_USART_INT_CLK | // Internal clock
-                               SERCOM_USART_CTRLA_RXPO(3) | // RX on PAD[3] (PA21)
-                               SERCOM_USART_CTRLA_TXPO(1);  // TX on PAD[1] (PA20)
+                               SERCOM_USART_CTRLA_RXPO(_U_(0x3)) | // RX on PAD[3] (PA21)
+                               SERCOM_USART_CTRLA_TXPO(_U_(0x1));  // TX on PAD[1] (PA20)
 
     SERCOM5->USART.CTRLB.reg = SERCOM_USART_CTRLB_RXEN | // Enable RX
                                SERCOM_USART_CTRLB_TXEN;  // Enable TX
-    while (SERCOM5->USART.SYNCBUSY.bit.CTRLB);
 
-    // Baud rate configuration (assuming 48MHz clock, 19200 baud)
-    SERCOM5->USART.BAUD.reg = 63019; // Formula: BAUD = 65536 * (1 - (16 * Baud / Fclk))
+    // Baud rate configuration (assuming 1MHz clock, 19200 baud)
+    SERCOM5->USART.BAUD.reg = (uint16_t)(65536 * (1 - ((16.0 * 19200) / SYSTEM_CORE_CLOCK)));
 
     // Enable SERCOM5
     SERCOM5->USART.CTRLA.reg |= SERCOM_USART_CTRLA_ENABLE;
-    while (SERCOM5->USART.SYNCBUSY.bit.ENABLE);
 }
 
 void uart_write(uint8_t data) {
