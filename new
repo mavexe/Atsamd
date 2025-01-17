@@ -1,5 +1,3 @@
-#include <sam.h>
-
 #define I2C_SLAVE_ADDRESS 0x10
 #define SYSTEM_CORE_CLOCK 1000000 // 1 MHz
 
@@ -46,8 +44,8 @@ void init_uart(void) {
     // Configure SERCOM5 as UART
     SERCOM5->USART.CTRLA.reg = SERCOM_USART_CTRLA_DORD | // LSB first
                                SERCOM_USART_CTRLA_MODE_USART_INT_CLK | // Internal clock
-                               (SERCOM_USART_CTRLA_RXPO(3) << SERCOM_USART_CTRLA_RXPO_Pos) | // RX on PAD[3] (PA21)
-                               (SERCOM_USART_CTRLA_TXPO(1) << SERCOM_USART_CTRLA_TXPO_Pos);  // TX on PAD[1] (PA20)
+                               (3 << SERCOM_USART_CTRLA_RXPO_Pos) | // RX on PAD[3] (PA21)
+                               (1 << SERCOM_USART_CTRLA_TXPO_Pos);  // TX on PAD[1] (PA20)
 
     SERCOM5->USART.CTRLB.reg = SERCOM_USART_CTRLB_RXEN | // Enable RX
                                SERCOM_USART_CTRLB_TXEN;  // Enable TX
