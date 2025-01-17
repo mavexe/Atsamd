@@ -1,3 +1,4 @@
+
 void init_uart(void) {
     // Включение тактирования для модуля SERCOM5
     PM->APBCMASK.reg |= PM_APBCMASK_SERCOM5;
@@ -16,19 +17,17 @@ void init_uart(void) {
     // Конфигурация SERCOM5 для UART
     SERCOM5->USART.CTRLA.reg = SERCOM_USART_CTRLA_MODE_USART_INT_CLK | // Внутренний источник тактирования
                                SERCOM_USART_CTRLA_DORD |              // Младший бит вперед
-                               SERCOM_USART_CTRLA_RXPO(3) |           // RX на PAD[3] (PA21)
-                               SERCOM_USART_CTRLA_TXPO(1);            // TX на PAD[2] (PA20)
+                               (SERCOM_USART_CTRLA_RXPO_Msk & (3 << SERCOM_USART_CTRLA_RXPO_Pos)) | // RX на PAD[3] (PA21)
+                               (SERCOM_USART_CTRLA_TXPO_Msk & (1 << SERCOM_USART_CTRLA_TXPO_Pos));  // TX на PAD[2] (PA20)
 
     SERCOM5->USART.CTRLB.reg = SERCOM_USART_CTRLB_RXEN | // Включение приемника
                                SERCOM_USART_CTRLB_TXEN; // Включение передатчика
-    while (SERCOM5->USART.SYNCBUSY.bit.CTRLB); // Ожидание завершения синхронизации
 
     // Установка скорости передачи данных (19200 бод при 1 MHz)
     SERCOM5->USART.BAUD.reg = (1000000 / (16 * 19200)) - 1; // Формула: BAUD = (f_ref / (16 * f_baud)) - 1
 
     // Включение UART
     SERCOM5->USART.CTRLA.reg |= SERCOM_USART_CTRLA_ENABLE;
-    while (SERCOM5->USART.SYNCBUSY.bit.ENABLE); // Ожидание завершения синхронизации
 }
 
 void uart_echo(void) {
