@@ -1,0 +1,55 @@
+void init_uart(void) {
+    // Включение тактирования для модуля SERCOM5
+    PM->APBCMASK.reg |= PM_APBCMASK_SERCOM5;
+
+    // Настройка генератора для SERCOM5 на 1 MHz
+    GCLK->CLKCTRL.reg = GCLK_CLKCTRL_ID(SERCOM5_GCLK_ID_CORE) |
+                        GCLK_CLKCTRL_CLKEN |
+                        GCLK_CLKCTRL_GEN(0); // Генератор 0
+
+    // Настройка пинов PA20 и PA21 для работы с UART (SERCOM5)
+    PORT->Group[0].PINCFG[20].reg = PORT_PINCFG_PMUXEN; // Включение мультиплексирования для PA20
+    PORT->Group[0].PINCFG[21].reg = PORT_PINCFG_PMUXEN; // Включение мультиплексирования для PA21
+
+    PORT->Group[0].PMUX[10].reg = PORT_PMUX_PMUXE(2) | PORT_PMUX_PMUXO(2); // SERCOM5: PA20 (PAD[2]), PA21 (PAD[3])
+
+    // Конфигурация SERCOM5 для UART
+    SERCOM5->USART.CTRLA.reg = SERCOM_USART_CTRLA_MODE_USART_INT_CLK | // Внутренний источник тактирования
+                               SERCOM_USART_CTRLA_DORD |              // Младший бит вперед
+                               SERCOM_USART_CTRLA_RXPO(3) |           // RX на PAD[3] (PA21)
+                               SERCOM_USART_CTRLA_TXPO(1);            // TX на PAD[2] (PA20)
+
+    SERCOM5->USART.CTRLB.reg = SERCOM_USART_CTRLB_RXEN | // Включение приемника
+                               SERCOM_USART_CTRLB_TXEN; // Включение передатчика
+    while (SERCOM5->USART.STATUS.reg & SERCOM_USART_STATUS_SYNCBUSY); // Ожидание завершения синхронизации
+
+    // Установка скорости передачи данных (19200 бод при 1 MHz)
+    SERCOM5->USART.BAUD.reg = 5208; // Формула: BAUD = (f_ref / (16 * f_baud)) - 1
+
+    // Включение UART
+    SERCOM5->USART.CTRLA.reg |= SERCOM_USART_CTRLA_ENABLE;
+    while (SERCOM5->USART.STATUS.reg & SERCOM_USART_STATUS_SYNCBUSY); // Ожидание завершения синхронизации
+}
+
+void uart_echo(void) {
+    while (1) {
+        // Ожидание данных
+        while (!(SERCOM5->USART.INTFLAG.reg & SERCOM_USART_INTFLAG_RXC));
+        uint8_t data = SERCOM5->USART.DATA.reg; // Чтение данных
+
+        // Ожидание готовности передатчика
+        while (!(SERCOM5->USART.INTFLAG.reg & SERCOM_USART_INTFLAG_DRE));
+        SERCOM5->USART.DATA.reg = data; // Отправка данных обратно
+    }
+}
+
+int main(void) {
+    SystemInit();
+    init_uart();
+
+    uart_echo(); // Запуск эхо-функции
+
+    while (1) {
+        // Основной цикл (не должен сюда попасть)
+    }
+}
