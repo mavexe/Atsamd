@@ -1,4 +1,3 @@
-
 #define I2C_SLAVE_ADDRESS 0x10
 #define SYSTEM_CORE_CLOCK 1000000 // 1 MHz
 
@@ -45,8 +44,8 @@ void init_uart(void) {
     // Configure SERCOM5 as UART
     SERCOM5->USART.CTRLA.reg = SERCOM_USART_CTRLA_DORD | // LSB first
                                SERCOM_USART_CTRLA_MODE_USART_INT_CLK | // Internal clock
-                               SERCOM_USART_CTRLA_RXPO(_U_(0x3)) | // RX on PAD[3] (PA21)
-                               SERCOM_USART_CTRLA_TXPO(_U_(0x1));  // TX on PAD[1] (PA20)
+                               SERCOM_USART_CTRLA_RXPO(3) | // RX on PAD[3] (PA21)
+                               SERCOM_USART_CTRLA_TXPO(1);  // TX on PAD[1] (PA20)
 
     SERCOM5->USART.CTRLB.reg = SERCOM_USART_CTRLB_RXEN | // Enable RX
                                SERCOM_USART_CTRLB_TXEN;  // Enable TX
@@ -77,7 +76,7 @@ void i2c_slave_handler(void) {
 
     if (SERCOM1->I2CS.INTFLAG.bit.PREC) {
         // Stop Condition Received
-        SERCOM1->I2CS.STATUS.reg |= SERCOM_I2CS_STATUS_PREC;
+        SERCOM1->I2CS.STATUS.reg |= SERCOM_I2CS_STATUS_BUSERR; // Adjusted to handle correct flag
     }
 }
 
