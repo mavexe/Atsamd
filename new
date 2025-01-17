@@ -1,51 +1,93 @@
-#include "sam.h"
+#define I2C_SLAVE_ADDRESS 0x10
 
-void initUART(void) {
-    // Настройка GCLK для SERCOM5
-    GCLK->CLKCTRL.reg = GCLK_CLKCTRL_ID(SERCOM5_GCLK_ID_CORE) |
-                        GCLK_CLKCTRL_GEN(0) | // GCLK0: 1 МГц
+void init_i2c_slave(void) {
+    // Enable GCLK for SERCOM1
+    GCLK->CLKCTRL.reg = GCLK_CLKCTRL_ID(SERCOM1_GCLK_ID_CORE) |
+                        GCLK_CLKCTRL_GEN(0) | // Generic Clock Generator 0
                         GCLK_CLKCTRL_CLKEN;
-    while (GCLK->STATUS.bit.SYNCBUSY); // Ожидание завершения синхронизации
+    while (GCLK->STATUS.bit.SYNCBUSY);
 
-    // Настройка портов PA20 (RX) и PA21 (TX)
-    PORT->Group[0].PMUX[10].reg = PORT_PMUX_PMUXE_D | PORT_PMUX_PMUXO_D; // PA20 и PA21: SERCOM5
-    PORT->Group[0].PINCFG[20].reg = PORT_PINCFG_PMUXEN; // Включение мультиплексирования для PA20
-    PORT->Group[0].PINCFG[21].reg = PORT_PINCFG_PMUXEN; // Включение мультиплексирования для PA21
+    // Configure SERCOM1 pins for I2C (PA16 SDA, PA17 SCL)
+    PORT->Group[0].PINCFG[16].reg = PORT_PINCFG_PMUXEN;
+    PORT->Group[0].PINCFG[17].reg = PORT_PINCFG_PMUXEN;
+    PORT->Group[0].PMUX[8].reg = PORT_PMUX_PMUXE_C | PORT_PMUX_PMUXO_C;
 
-    // Настройка SERCOM5 в режиме USART
-    SERCOM5->USART.CTRLA.reg = (1 << 2) | // TXPO = 1 (TX на PAD[1] - PA21)
-                                (3 << 20) | // RXPO = 3 (RX на PAD[3] - PA20)
-                                SERCOM_USART_CTRLA_MODE_USART_INT_CLK; // Используем внутренний тактовый сигнал
+    // Reset SERCOM1
+    SERCOM1->I2CS.CTRLA.reg = SERCOM_I2CS_CTRLA_SWRST;
+    while (SERCOM1->I2CS.SYNCBUSY.bit.SWRST);
 
-    SERCOM5->USART.CTRLB.reg = SERCOM_USART_CTRLB_TXEN |  // Включаем передатчик
-                                SERCOM_USART_CTRLB_RXEN;  // Включаем приемник
+    // Configure SERCOM1 as I2C Slave
+    SERCOM1->I2CS.CTRLA.reg = SERCOM_I2CS_CTRLA_MODE_I2C_SLAVE;
+    SERCOM1->I2CS.ADDR.reg = SERCOM_I2CS_ADDR_ADDR(I2C_SLAVE_ADDRESS);
 
-    // Установка скорости передачи 19200 бод
-    SERCOM5->USART.BAUD.reg = 65536 - (65536 * 19200 / 1000000);
-
-    // Включение SERCOM
-    SERCOM5->USART.CTRLA.reg |= SERCOM_USART_CTRLA_ENABLE;
+    // Enable SERCOM1
+    SERCOM1->I2CS.CTRLA.reg |= SERCOM_I2CS_CTRLA_ENABLE;
 }
 
-void echoUART(void) {
-    // Ожидаем доступности данных для чтения
-    while (!(SERCOM5->USART.INTFLAG.bit.RXC));
+void init_uart(void) {
+    // Enable GCLK for SERCOM5
+    GCLK->CLKCTRL.reg = GCLK_CLKCTRL_ID(SERCOM5_GCLK_ID_CORE) |
+                        GCLK_CLKCTRL_GEN(0) | // Generic Clock Generator 0
+                        GCLK_CLKCTRL_CLKEN;
+    while (GCLK->STATUS.bit.SYNCBUSY);
 
-    // Читаем принятые данные
-    uint8_t receivedData = SERCOM5->USART.DATA.reg;
+    // Configure SERCOM5 pins for UART (PA20 TX, PA21 RX)
+    PORT->Group[0].PINCFG[20].reg = PORT_PINCFG_PMUXEN;
+    PORT->Group[0].PINCFG[21].reg = PORT_PINCFG_PMUXEN;
+    PORT->Group[0].PMUX[10].reg = PORT_PMUX_PMUXE_C | PORT_PMUX_PMUXO_C;
 
-    // Ожидаем, пока передатчик освободится
-    while (!(SERCOM5->USART.INTFLAG.bit.DRE));
+    // Reset SERCOM5
+    SERCOM5->USART.CTRLA.reg = SERCOM_USART_CTRLA_SWRST;
+    while (SERCOM5->USART.SYNCBUSY.bit.SWRST);
 
-    // Отправляем данные обратно
-    SERCOM5->USART.DATA.reg = receivedData;
+    // Configure SERCOM5 as UART
+    SERCOM5->USART.CTRLA.reg = SERCOM_USART_CTRLA_DORD | // LSB first
+                               SERCOM_USART_CTRLA_MODE_USART_INT_CLK | // Internal clock
+                               SERCOM_USART_CTRLA_RXPO(3) | // RX on PAD[3] (PA21)
+                               SERCOM_USART_CTRLA_TXPO(1);  // TX on PAD[1] (PA20)
+
+    SERCOM5->USART.CTRLB.reg = SERCOM_USART_CTRLB_RXEN | // Enable RX
+                               SERCOM_USART_CTRLB_TXEN;  // Enable TX
+    while (SERCOM5->USART.SYNCBUSY.bit.CTRLB);
+
+    // Baud rate configuration (assuming 48MHz clock, 19200 baud)
+    SERCOM5->USART.BAUD.reg = 63019; // Formula: BAUD = 65536 * (1 - (16 * Baud / Fclk))
+
+    // Enable SERCOM5
+    SERCOM5->USART.CTRLA.reg |= SERCOM_USART_CTRLA_ENABLE;
+    while (SERCOM5->USART.SYNCBUSY.bit.ENABLE);
+}
+
+void uart_write(uint8_t data) {
+    while (!(SERCOM5->USART.INTFLAG.bit.DRE)); // Wait until Data Register Empty
+    SERCOM5->USART.DATA.reg = data;
+}
+
+void i2c_slave_handler(void) {
+    if (SERCOM1->I2CS.INTFLAG.bit.DRDY) {
+        // Data Ready
+        uint8_t received_data = SERCOM1->I2CS.DATA.reg;
+        uart_write(received_data); // Transmit received data over UART
+    }
+
+    if (SERCOM1->I2CS.INTFLAG.bit.AMATCH) {
+        // Address Match
+        SERCOM1->I2CS.STATUS.reg |= SERCOM_I2CS_STATUS_AMATCH;
+    }
+
+    if (SERCOM1->I2CS.INTFLAG.bit.PREC) {
+        // Stop Condition Received
+        SERCOM1->I2CS.STATUS.reg |= SERCOM_I2CS_STATUS_PREC;
+    }
 }
 
 int main(void) {
-    SystemInit(); // Инициализация системы
-    initUART();   // Настройка UART
+    SystemInit();
+
+    init_i2c_slave();
+    init_uart();
 
     while (1) {
-        echoUART(); // Эхо-цикл
+        i2c_slave_handler();
     }
 }
