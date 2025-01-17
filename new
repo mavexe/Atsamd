@@ -1,51 +1,11 @@
-#define I2C_SLAVE_ADDRESS 0x10
+#include <sam.h>
+
 #define SYSTEM_CORE_CLOCK 1000000 // 1 MHz
-
-void init_i2c_slave(SERCOM_I2CS_Type *i2c_instance) {
-    // Enable GCLK for the respective SERCOM
-    if (i2c_instance == &SERCOM0->I2CS) {
-        GCLK->CLKCTRL.reg = GCLK_CLKCTRL_ID(SERCOM0_GCLK_ID_CORE) |
-                            GCLK_CLKCTRL_GEN(0) | // Generic Clock Generator 0
-                            GCLK_CLKCTRL_CLKEN;
-    } else if (i2c_instance == &SERCOM1->I2CS) {
-        GCLK->CLKCTRL.reg = GCLK_CLKCTRL_ID(SERCOM1_GCLK_ID_CORE) |
-                            GCLK_CLKCTRL_GEN(0) | // Generic Clock Generator 0
-                            GCLK_CLKCTRL_CLKEN;
-    } else if (i2c_instance == &SERCOM2->I2CS) {
-        GCLK->CLKCTRL.reg = GCLK_CLKCTRL_ID(SERCOM2_GCLK_ID_CORE) |
-                            GCLK_CLKCTRL_GEN(0) | // Generic Clock Generator 0
-                            GCLK_CLKCTRL_CLKEN;
-    } else if (i2c_instance == &SERCOM3->I2CS) {
-        GCLK->CLKCTRL.reg = GCLK_CLKCTRL_ID(SERCOM3_GCLK_ID_CORE) |
-                            GCLK_CLKCTRL_GEN(0) | // Generic Clock Generator 0
-                            GCLK_CLKCTRL_CLKEN;
-    } else if (i2c_instance == &SERCOM4->I2CS) {
-        GCLK->CLKCTRL.reg = GCLK_CLKCTRL_ID(SERCOM4_GCLK_ID_CORE) |
-                            GCLK_CLKCTRL_GEN(0) | // Generic Clock Generator 0
-                            GCLK_CLKCTRL_CLKEN;
-    }
-    while (GCLK->STATUS.bit.SYNCBUSY);
-
-    // Configure SERCOM pins for I2C
-    // Assuming PA08/PA09 for SERCOM0, PA16/PA17 for others as needed
-    // (Add specific configurations based on the SERCOM instance if needed)
-
-    // Reset the I2C instance
-    i2c_instance->CTRLA.reg = SERCOM_I2CS_CTRLA_SWRST;
-    while (i2c_instance->CTRLA.bit.SWRST);
-
-    // Configure as I2C Slave
-    i2c_instance->CTRLA.reg = SERCOM_I2CS_CTRLA_MODE_I2C_SLAVE;
-    i2c_instance->ADDR.reg = SERCOM_I2CS_ADDR_ADDR(I2C_SLAVE_ADDRESS);
-
-    // Enable I2C instance
-    i2c_instance->CTRLA.reg |= SERCOM_I2CS_CTRLA_ENABLE;
-}
 
 void init_uart(void) {
     // Enable GCLK for SERCOM5
     GCLK->CLKCTRL.reg = GCLK_CLKCTRL_ID(SERCOM5_GCLK_ID_CORE) |
-                        GCLK_CLKCTRL_GEN(0) | // Generic Clock Generator 0
+                        GCLK_CLKCTRL_GEN(0) |
                         GCLK_CLKCTRL_CLKEN;
     while (GCLK->STATUS.bit.SYNCBUSY);
 
@@ -59,15 +19,15 @@ void init_uart(void) {
     while (SERCOM5->USART.CTRLA.bit.SWRST);
 
     // Configure SERCOM5 as UART
-    SERCOM5->USART.CTRLA.reg = SERCOM_USART_CTRLA_DORD | // LSB first
-                               SERCOM_USART_CTRLA_MODE_USART_INT_CLK | // Internal clock
-                               (3 << SERCOM_USART_CTRLA_RXPO_Pos) | // RX on PAD[3] (PA21)
-                               (1 << SERCOM_USART_CTRLA_TXPO_Pos);  // TX on PAD[1] (PA20)
+    SERCOM5->USART.CTRLA.reg = SERCOM_USART_CTRLA_DORD |
+                               SERCOM_USART_CTRLA_MODE_USART_INT_CLK |
+                               (3 << SERCOM_USART_CTRLA_RXPO_Pos) |
+                               (1 << SERCOM_USART_CTRLA_TXPO_Pos);
 
-    SERCOM5->USART.CTRLB.reg = SERCOM_USART_CTRLB_RXEN | // Enable RX
-                               SERCOM_USART_CTRLB_TXEN;  // Enable TX
+    SERCOM5->USART.CTRLB.reg = SERCOM_USART_CTRLB_RXEN |
+                               SERCOM_USART_CTRLB_TXEN;
 
-    // Baud rate configuration (assuming 1MHz clock, 19200 baud)
+    // Baud rate (19200 baud, 1 MHz clock)
     SERCOM5->USART.BAUD.reg = (uint16_t)(65536 * (1 - ((16.0 * 19200) / SYSTEM_CORE_CLOCK)));
 
     // Enable SERCOM5
@@ -75,46 +35,22 @@ void init_uart(void) {
 }
 
 void uart_write(uint8_t data) {
-    while (!(SERCOM5->USART.INTFLAG.bit.DRE)); // Wait until Data Register Empty
+    while (!(SERCOM5->USART.INTFLAG.bit.DRE));
     SERCOM5->USART.DATA.reg = data;
 }
 
-void i2c_slave_handler(SERCOM_I2CS_Type *i2c_instance) {
-    if (i2c_instance->INTFLAG.bit.DRDY) {
-        // Data Ready
-        uint8_t received_data = i2c_instance->DATA.reg;
-        uart_write(received_data); // Transmit received data over UART
-    }
-
-    if (i2c_instance->INTFLAG.bit.AMATCH) {
-        // Address Match
-        i2c_instance->STATUS.reg |= SERCOM_I2CS_STATUS_SLAVE; // Handle address match
-    }
-
-    if (i2c_instance->INTFLAG.bit.PREC) {
-        // Stop Condition Received
-        i2c_instance->STATUS.reg |= SERCOM_I2CS_STATUS_SLAVE; // Handle stop condition
+void uart_echo_handler(void) {
+    if (SERCOM5->USART.INTFLAG.bit.RXC) {
+        uint8_t received_data = SERCOM5->USART.DATA.reg;
+        uart_write(received_data);
     }
 }
 
 int main(void) {
     SystemInit();
-
-    // Initialize all I2C slave SERCOMs
-    init_i2c_slave(&SERCOM0->I2CS);
-    init_i2c_slave(&SERCOM1->I2CS);
-    init_i2c_slave(&SERCOM2->I2CS);
-    init_i2c_slave(&SERCOM3->I2CS);
-    init_i2c_slave(&SERCOM4->I2CS);
-
-    // Initialize UART on SERCOM5
     init_uart();
 
     while (1) {
-        i2c_slave_handler(&SERCOM0->I2CS);
-        i2c_slave_handler(&SERCOM1->I2CS);
-        i2c_slave_handler(&SERCOM2->I2CS);
-        i2c_slave_handler(&SERCOM3->I2CS);
-        i2c_slave_handler(&SERCOM4->I2CS);
+        uart_echo_handler();
     }
 }
