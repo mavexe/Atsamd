@@ -1,0 +1,93 @@
+void init_uart(void) {
+    // Включение тактирования для модуля SERCOM5
+    PM->APBCMASK.reg |= PM_APBCMASK_SERCOM5;
+
+    // Настройка генератора для SERCOM5 на 1 MHz
+    GCLK->CLKCTRL.reg = GCLK_CLKCTRL_ID(SERCOM5_GCLK_ID_CORE) |
+                        GCLK_CLKCTRL_CLKEN |
+                        GCLK_CLKCTRL_GEN(0); // Генератор 0
+
+    // Настройка пинов PA20 и PA21 для работы с UART (SERCOM5)
+    PORT->Group[0].PINCFG[20].reg = PORT_PINCFG_PMUXEN; // Включение мультиплексирования для PA20
+    PORT->Group[0].PINCFG[21].reg = PORT_PINCFG_PMUXEN; // Включение мультиплексирования для PA21
+
+    PORT->Group[0].PMUX[10].reg = PORT_PMUX_PMUXE(2) | PORT_PMUX_PMUXO(2); // SERCOM5: PA20 (PAD[2]), PA21 (PAD[3])
+
+    // Конфигурация SERCOM5 для UART
+    SERCOM5->USART.CTRLA.reg = SERCOM_USART_CTRLA_MODE_USART_INT_CLK | // Внутренний источник тактирования
+                               SERCOM_USART_CTRLA_DORD |              // Младший бит вперед
+                               (0x3 << SERCOM_USART_CTRLA_RXPO_Pos) | // RX на PAD[3] (PA21)
+                               (0x1 << SERCOM_USART_CTRLA_TXPO_Pos);  // TX на PAD[2] (PA20)
+
+    SERCOM5->USART.CTRLB.reg = SERCOM_USART_CTRLB_RXEN | // Включение приемника
+                               SERCOM_USART_CTRLB_TXEN; // Включение передатчика
+
+    // Установка скорости передачи данных (19200 бод при 1 MHz)
+    SERCOM5->USART.BAUD.reg = (1000000 / (16 * 19200)) - 1; // Формула: BAUD = (f_ref / (16 * f_baud)) - 1
+
+    // Включение UART
+    SERCOM5->USART.CTRLA.reg |= SERCOM_USART_CTRLA_ENABLE;
+}
+
+void init_all_i2c_as_slave(void) {
+    // Настройка всех SERCOM для работы в режиме I2C Slave, кроме SERCOM5 (UART)
+    for (int sercom = 0; sercom <= 5; sercom++) {
+        if (sercom == 5) {
+            continue; // Пропускаем SERCOM5, так как он используется для UART
+        }
+
+        // Включение тактирования для текущего SERCOM
+        PM->APBCMASK.reg |= (1 << (PM_APBCMASK_SERCOM0_Pos + sercom));
+
+        // Настройка генератора для текущего SERCOM
+        GCLK->CLKCTRL.reg = GCLK_CLKCTRL_ID(SERCOM0_GCLK_ID_CORE + sercom) |
+                            GCLK_CLKCTRL_CLKEN |
+                            GCLK_CLKCTRL_GEN(0); // Генератор 0
+
+        // Настройка пинов I2C (PA08-SDA, PA09-SCL как пример для SERCOM0)
+        if (sercom == 0) {
+            PORT->Group[0].PINCFG[8].reg = PORT_PINCFG_PMUXEN | PORT_PINCFG_PULLEN;
+            PORT->Group[0].PINCFG[9].reg = PORT_PINCFG_PMUXEN | PORT_PINCFG_PULLEN;
+            PORT->Group[0].PMUX[4].reg = PORT_PMUX_PMUXE(2) | PORT_PMUX_PMUXO(2); // SERCOM0: PA08 (SDA), PA09 (SCL)
+        }
+        // Добавить настройки пинов для других SERCOM при необходимости
+
+        // Конфигурация текущего SERCOM для I2C Slave
+        SERCOM0->I2CS.CTRLA.reg = SERCOM_I2CS_CTRLA_MODE_I2C_SLAVE | // I2C в режиме Slave
+                                  SERCOM_I2CS_CTRLA_SDAHOLD(2);     // Удержание SDA
+
+        SERCOM0->I2CS.ADDR.reg = (16 << 1); // Адрес устройства: 16 в десятичной системе
+
+        SERCOM0->I2CS.CTRLA.reg |= SERCOM_I2CS_CTRLA_ENABLE; // Включение I2C
+    }
+}
+
+void i2c_to_uart_bridge(void) {
+    while (1) {
+        // Перебор всех SERCOM для проверки данных, кроме SERCOM5
+        for (int sercom = 0; sercom <= 5; sercom++) {
+            if (sercom == 5) {
+                continue; // Пропускаем SERCOM5
+            }
+            if (SERCOM0->I2CS.INTFLAG.reg & SERCOM_I2CS_INTFLAG_DRDY) {
+                uint8_t data = SERCOM0->I2CS.DATA.reg; // Чтение данных от I2C Master
+
+                // Передача данных через UART
+                while (!(SERCOM5->USART.INTFLAG.reg & SERCOM_USART_INTFLAG_DRE));
+                SERCOM5->USART.DATA.reg = data;
+            }
+        }
+    }
+}
+
+int main(void) {
+    SystemInit();
+    init_uart();
+    init_all_i2c_as_slave();
+
+    i2c_to_uart_bridge(); // Запуск моста I2C -> UART
+
+    while (1) {
+        // Основной цикл (не должен сюда попасть)
+    }
+}
