@@ -1,65 +1,62 @@
-void SystemInit(void) {
-    // Настройка генерации тактовой частоты на 1 МГц
-    SYSCTRL->OSC8M.bit.PRESC = 0; // Делитель на 1, частота = 8 МГц
-    SYSCTRL->OSC8M.bit.ONDEMAND = 0; // Постоянное включение осциллятора
-    SYSCTRL->OSC8M.bit.RUNSTDBY = 1; // Работает в режиме ожидания
-    GCLK->GENDIV.reg = GCLK_GENDIV_ID(0) | GCLK_GENDIV_DIV(8); // Делитель GCLK0 = 8
-    GCLK->GENCTRL.reg = GCLK_GENCTRL_ID(0) | GCLK_GENCTRL_SRC_OSC8M |
-                        GCLK_GENCTRL_GENEN;
-    while (GCLK->STATUS.bit.SYNCBUSY); // Ожидание завершения синхронизации
 
-    // Подключение GCLK к SERCOM
-    GCLK->CLKCTRL.reg = GCLK_CLKCTRL_ID(SERCOM3_GCLK_ID_CORE) |
-                        GCLK_CLKCTRL_GEN(0) | GCLK_CLKCTRL_CLKEN;
-    while (GCLK->STATUS.bit.SYNCBUSY); // Ожидание завершения синхронизации
+// Настройка UART (SERCOM5, PA20 - TX, PA21 - RX)
+void configure_uart(void) {
+    // Включение тактирования для SERCOM5
+    PM->APBCMASK.reg |= PM_APBCMASK_SERCOM5;
+
+    // Настройка генератора тактов для SERCOM5
+    GCLK->CLKCTRL.reg = GCLK_CLKCTRL_ID(GCLK_CLKCTRL_ID_SERCOM5_CORE) | 
+                        GCLK_CLKCTRL_GEN(0) | // Используем GCLK0 с частотой 1 МГц
+                        GCLK_CLKCTRL_CLKEN;
+    while (GCLK->STATUS.bit.SYNCBUSY);
+
+    // Настройка мультиплексирования пинов PA20 и PA21 для SERCOM5
+    PORT->Group[0].PMUX[20 / 2].reg |= PORT_PMUX_PMUXE_D | PORT_PMUX_PMUXO_D; // PA20 = TX, PA21 = RX
+    PORT->Group[0].PINCFG[20].reg |= PORT_PINCFG_PMUXEN;
+    PORT->Group[0].PINCFG[21].reg |= PORT_PINCFG_PMUXEN;
+
+    // Отключение SERCOM перед настройкой
+    SERCOM5->USART.CTRLA.reg = SERCOM_USART_CTRLA_SWRST;
+    while (SERCOM5->USART.SYNCBUSY.bit.SWRST);
+
+    // Настройка режима UART: асинхронный, 8-N-1
+    SERCOM5->USART.CTRLA.reg = SERCOM_USART_CTRLA_MODE_USART_INT_CLK | // Режим UART с внутренними часами
+                                SERCOM_USART_CTRLA_RXPO(3) |            // RX на PAD[3] (PA21)
+                                SERCOM_USART_CTRLA_TXPO(1) |            // TX на PAD[2] (PA20)
+                                SERCOM_USART_CTRLA_DORD;               // LSB-first
+
+    // Настройка скорости передачи данных (BAUD)
+    uint64_t baud = 65536 - ((65536 * 16 * 19200) / 1000000);
+    SERCOM5->USART.BAUD.reg = (uint16_t)baud;
+
+    // Включение приемника и передатчика
+    SERCOM5->USART.CTRLB.reg = SERCOM_USART_CTRLB_RXEN | SERCOM_USART_CTRLB_TXEN;
+    while (SERCOM5->USART.SYNCBUSY.bit.CTRLB);
+
+    // Включение SERCOM
+    SERCOM5->USART.CTRLA.reg |= SERCOM_USART_CTRLA_ENABLE;
+    while (SERCOM5->USART.SYNCBUSY.bit.ENABLE);
 }
 
-void UART_Init(void) {
-    // Настройка пинов PA20 и PA21 для работы UART
-    PORT->Group[0].PINCFG[20].bit.PMUXEN = 1;
-    PORT->Group[0].PINCFG[21].bit.PMUXEN = 1;
-    PORT->Group[0].PMUX[10].reg = PORT_PMUX_PMUXE_D | PORT_PMUX_PMUXO_D; // SERCOM3
-
-    // Отключение модуля перед конфигурацией
-    SERCOM3->USART.CTRLA.reg = SERCOM_USART_CTRLA_SWRST;
-    while (SERCOM3->USART.CTRLA.bit.SWRST);
-
-    // Конфигурация режима UART
-    SERCOM3->USART.CTRLA.reg = SERCOM_USART_CTRLA_DORD | // LSB First
-                               SERCOM_USART_CTRLA_MODE_USART_INT_CLK | // Внутренний генератор
-                               SERCOM_USART_CTRLA_RXPO(3) | // RX на PAD[3] (PA21)
-                               SERCOM_USART_CTRLA_TXPO(1); // TX на PAD[2] (PA20)
-
-    SERCOM3->USART.CTRLB.reg = SERCOM_USART_CTRLB_TXEN | // Включение TX
-                               SERCOM_USART_CTRLB_RXEN; // Включение RX
-
-    while (SERCOM3->USART.SYNCBUSY.bit.CTRLB); // Ожидание синхронизации
-
-    // Установка скорости UART: BAUD = 65536 * (1 - 16 * BAUD_RATE / F_REF)
-    uint64_t baud = (uint64_t)65536 * (1 - (16.0 * 9600 / 1000000));
-    SERCOM3->USART.BAUD.reg = (uint16_t)baud;
-
-    // Включение модуля
-    SERCOM3->USART.CTRLA.reg |= SERCOM_USART_CTRLA_ENABLE;
-    while (SERCOM3->USART.SYNCBUSY.bit.ENABLE); // Ожидание синхронизации
+// Функция для передачи одного байта данных
+void uart_write_byte(uint8_t data) {
+    while (!(SERCOM5->USART.INTFLAG.bit.DRE)); // Ожидание освобождения буфера
+    SERCOM5->USART.DATA.reg = data;
 }
 
-void UART_Write(uint8_t data) {
-    while (!(SERCOM3->USART.INTFLAG.bit.DRE)); // Ожидание освобождения регистра
-    SERCOM3->USART.DATA.reg = data;
+// Функция для чтения одного байта данных
+uint8_t uart_read_byte(void) {
+    while (!(SERCOM5->USART.INTFLAG.bit.RXC)); // Ожидание приема данных
+    return SERCOM5->USART.DATA.reg;
 }
 
-uint8_t UART_Read(void) {
-    while (!(SERCOM3->USART.INTFLAG.bit.RXC)); // Ожидание приема данных
-    return SERCOM3->USART.DATA.reg;
-}
-
+// Главная функция
 int main(void) {
-    SystemInit();
-    UART_Init();
+    system_init();
+    configure_uart();
 
     while (1) {
-        uint8_t received = UART_Read(); // Чтение данных
-        UART_Write(received);          // Передача тех же данных (эхо)
+        uint8_t received = uart_read_byte(); // Чтение байта
+        uart_write_byte(received);          // Эхо-ответ
     }
 }
