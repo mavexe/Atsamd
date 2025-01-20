@@ -1,0 +1,70 @@
+void configure_clocks(void) {
+    // Enable the clock for SERCOM5
+    PM->APBCMASK.reg |= PM_APBCMASK_SERCOM5;
+
+    // Enable GCLK for SERCOM5
+    GCLK->CLKCTRL.reg = GCLK_CLKCTRL_ID(SERCOM5_GCLK_ID_CORE) |
+                        GCLK_CLKCTRL_GEN_GCLK0 |
+                        GCLK_CLKCTRL_CLKEN;
+    while (GCLK->STATUS.bit.SYNCBUSY);
+}
+
+void configure_pins(void) {
+    // Configure PA20 as TX (SERCOM5 PAD[2])
+    PORT->Group[0].DIRSET.reg = (1 << 20);
+    PORT->Group[0].PMUX[20 >> 1].bit.PMUXE = PORT_PMUX_PMUXE_D_Val;
+    PORT->Group[0].PINCFG[20].bit.PMUXEN = 1;
+
+    // Configure PA21 as RX (SERCOM5 PAD[3])
+    PORT->Group[0].DIRCLR.reg = (1 << 21);
+    PORT->Group[0].PMUX[21 >> 1].bit.PMUXO = PORT_PMUX_PMUXO_D_Val;
+    PORT->Group[0].PINCFG[21].bit.PMUXEN = 1;
+}
+
+void configure_uart(void) {
+    // Reset SERCOM5
+    SERCOM5->USART.CTRLA.reg = SERCOM_USART_CTRLA_SWRST;
+    while (SERCOM5->USART.CTRLA.bit.SWRST);
+
+    // Configure SERCOM5 as USART
+    SERCOM5->USART.CTRLA.reg = SERCOM_USART_CTRLA_MODE_USART_INT_CLK | // Internal clock
+                               SERCOM_USART_CTRLA_RXPO(0x3) |          // RX on PAD[3]
+                               SERCOM_USART_CTRLA_TXPO(0x1) |          // TX on PAD[2]
+                               SERCOM_USART_CTRLA_DORD;               // LSB first
+
+    // Set baud rate to 19200
+    uint64_t baud = (uint64_t)65536 * (1000000 - 16 * 19200) / 1000000;
+    SERCOM5->USART.BAUD.reg = (uint16_t)baud;
+
+    // Enable receiver and transmitter
+    SERCOM5->USART.CTRLB.reg = SERCOM_USART_CTRLB_RXEN |
+                               SERCOM_USART_CTRLB_TXEN;
+    while (SERCOM5->USART.CTRLB.bit.RXEN == 0 || SERCOM5->USART.CTRLB.bit.TXEN == 0);
+
+    // Enable SERCOM5 USART
+    SERCOM5->USART.CTRLA.reg |= SERCOM_USART_CTRLA_ENABLE;
+    while (SERCOM5->USART.CTRLA.bit.ENABLE == 0);
+}
+
+void uart_send(uint8_t data) {
+    while (!(SERCOM5->USART.INTFLAG.bit.DRE)); // Wait until DATA register empty
+    SERCOM5->USART.DATA.reg = data;
+}
+
+uint8_t uart_receive(void) {
+    while (!(SERCOM5->USART.INTFLAG.bit.RXC)); // Wait until data is received
+    return SERCOM5->USART.DATA.reg;
+}
+
+int main(void) {
+    SystemInit();
+
+    configure_clocks();
+    configure_pins();
+    configure_uart();
+
+    while (1) {
+        uint8_t received = uart_receive(); // Receive a byte
+        uart_send(received);              // Echo it back
+    }
+}
