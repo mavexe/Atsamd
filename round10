@@ -1,0 +1,90 @@
+#define I2C_SLAVE_ADDRESS 16
+
+void configure_i2c_slave(void);
+void configure_uart(void);
+void transfer_data_via_uart(uint8_t data);
+
+int main(void) {
+    SystemInit();
+
+    configure_i2c_slave();
+    configure_uart();
+
+    uint8_t received_data = 0;
+
+    while (1) {
+        // Wait for data to be received on I2C
+        if (SERCOM1->I2CS.INTFLAG.bit.DRDY) {
+            received_data = SERCOM1->I2CS.DATA.reg;  // Read received data
+            transfer_data_via_uart(received_data);   // Send it via UART
+        }
+    }
+}
+
+void configure_i2c_slave(void) {
+    // Enable APB clock for SERCOM1
+    PM->APBCMASK.reg |= PM_APBCMASK_SERCOM1;
+
+    // Configure GCLK for SERCOM1
+    GCLK->CLKCTRL.reg = GCLK_CLKCTRL_ID(SERCOM1_GCLK_ID_CORE) |
+                        GCLK_CLKCTRL_GEN_GCLK0 | GCLK_CLKCTRL_CLKEN;
+    while (GCLK->STATUS.bit.SYNCBUSY);
+
+    // Configure pins PA08 (SDA) and PA09 (SCL) for SERCOM1
+    PORT->Group[0].PINCFG[8].bit.PMUXEN = 1;
+    PORT->Group[0].PINCFG[9].bit.PMUXEN = 1;
+    PORT->Group[0].PMUX[4].reg = PORT_PMUX_PMUXE_C | PORT_PMUX_PMUXO_C;
+
+    // Reset SERCOM1
+    SERCOM1->I2CS.CTRLA.reg = SERCOM_I2CS_CTRLA_SWRST;
+    while (SERCOM1->I2CS.CTRLA.bit.SWRST);
+
+    // Configure SERCOM1 as I2C Slave
+    SERCOM1->I2CS.CTRLA.reg = SERCOM_I2CS_CTRLA_MODE_I2C_SLAVE;
+    SERCOM1->I2CS.ADDR.reg = SERCOM_I2CS_ADDR_ADDR(I2C_SLAVE_ADDRESS << 1);
+
+    // Enable SERCOM1
+    SERCOM1->I2CS.CTRLA.bit.ENABLE = 1;
+    while (SERCOM1->I2CS.CTRLA.bit.ENABLE);
+}
+
+void configure_uart(void) {
+    // Enable APB clock for SERCOM5
+    PM->APBCMASK.reg |= PM_APBCMASK_SERCOM5;
+
+    // Configure GCLK for SERCOM5
+    GCLK->CLKCTRL.reg = GCLK_CLKCTRL_ID(SERCOM5_GCLK_ID_CORE) |
+                        GCLK_CLKCTRL_GEN_GCLK0 | GCLK_CLKCTRL_CLKEN;
+    while (GCLK->STATUS.bit.SYNCBUSY);
+
+    // Configure pins PA20 (TX) and PA21 (RX) for SERCOM5
+    PORT->Group[0].PINCFG[20].bit.PMUXEN = 1;
+    PORT->Group[0].PINCFG[21].bit.PMUXEN = 1;
+    PORT->Group[0].PMUX[10].reg = PORT_PMUX_PMUXE_D | PORT_PMUX_PMUXO_D;
+
+    // Reset SERCOM5
+    SERCOM5->USART.CTRLA.reg = SERCOM_USART_CTRLA_SWRST;
+    while (SERCOM5->USART.CTRLA.bit.SWRST);
+
+    // Configure SERCOM5 as UART
+    SERCOM5->USART.CTRLA.reg = SERCOM_USART_CTRLA_MODE_USART_INT_CLK |
+                                (3 << SERCOM_USART_CTRLA_RXPO_Pos) | // RX on PAD[3]
+                                (1 << SERCOM_USART_CTRLA_TXPO_Pos) | // TX on PAD[1]
+                                SERCOM_USART_CTRLA_DORD;     // LSB first
+
+    SERCOM5->USART.CTRLB.reg = SERCOM_USART_CTRLB_TXEN | SERCOM_USART_CTRLB_RXEN;
+    while (SERCOM5->USART.CTRLB.bit.TXEN || SERCOM5->USART.CTRLB.bit.RXEN);
+
+    // Set baud rate to 19200
+    uint64_t baud = 65536 - ((65536 * 16.0f * 19200) / 48000000.0f);
+    SERCOM5->USART.BAUD.reg = (uint16_t)baud;
+
+    // Enable SERCOM5
+    SERCOM5->USART.CTRLA.bit.ENABLE = 1;
+    while (SERCOM5->USART.CTRLA.bit.ENABLE);
+}
+
+void transfer_data_via_uart(uint8_t data) {
+    while (!SERCOM5->USART.INTFLAG.bit.DRE); // Wait until ready to transmit
+    SERCOM5->USART.DATA.reg = data;
+}
