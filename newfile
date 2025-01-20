@@ -2,22 +2,22 @@ void configure_clocks(void) {
     // Enable the clock for SERCOM5
     PM->APBCMASK.reg |= PM_APBCMASK_SERCOM5;
 
-    // Enable GCLK for SERCOM5
+    // Configure GCLK0 (internal 1MHz clock) for SERCOM5
     GCLK->CLKCTRL.reg = GCLK_CLKCTRL_ID(SERCOM5_GCLK_ID_CORE) |
                         GCLK_CLKCTRL_GEN_GCLK0 |
                         GCLK_CLKCTRL_CLKEN;
-    while (GCLK->STATUS.bit.SYNCBUSY);
+    while (GCLK->STATUS.bit.SYNCBUSY); // Wait for synchronization
 }
 
 void configure_pins(void) {
     // Configure PA20 as TX (SERCOM5 PAD[2])
     PORT->Group[0].DIRSET.reg = (1 << 20);  // Set PA20 as output
-    PORT->Group[0].PMUX[20 >> 1].bit.PMUXE = PORT_PMUX_PMUXE_D_Val; // Assign SERCOM function
+    PORT->Group[0].PMUX[20 >> 1].bit.PMUXE = PORT_PMUX_PMUXE_D_Val; // Assign SERCOM function to PA20
     PORT->Group[0].PINCFG[20].bit.PMUXEN = 1; // Enable peripheral multiplexer
 
     // Configure PA21 as RX (SERCOM5 PAD[3])
     PORT->Group[0].DIRCLR.reg = (1 << 21);  // Set PA21 as input
-    PORT->Group[0].PMUX[21 >> 1].bit.PMUXO = PORT_PMUX_PMUXO_D_Val; // Assign SERCOM function
+    PORT->Group[0].PMUX[21 >> 1].bit.PMUXO = PORT_PMUX_PMUXO_D_Val; // Assign SERCOM function to PA21
     PORT->Group[0].PINCFG[21].bit.PMUXEN = 1; // Enable peripheral multiplexer
 }
 
@@ -28,26 +28,25 @@ void configure_uart(void) {
 
     // Configure SERCOM5 as USART
     SERCOM5->USART.CTRLA.reg = SERCOM_USART_CTRLA_MODE_USART_INT_CLK | // Internal clock
-                               (0x3 << SERCOM_USART_CTRLA_RXPO_Pos) |  // RX on PAD[3]
-                               (0x1 << SERCOM_USART_CTRLA_TXPO_Pos) |  // TX on PAD[2]
+                               SERCOM_USART_CTRLA_RXPO(0x3) |          // RX on PAD[3]
+                               SERCOM_USART_CTRLA_TXPO(0x1) |          // TX on PAD[2]
                                SERCOM_USART_CTRLA_DORD;               // LSB first
 
-    // Set baud rate to 19200
-    uint16_t baud = (uint16_t)((1000000 / (16 * 19200)) - 1); // Formula for baud rate generation
+    // Set baud rate for 19200 bps
+    uint16_t baud = (1000000 / (16 * 19200)) - 1; // BAUD calculation
     SERCOM5->USART.BAUD.reg = baud;
 
     // Enable receiver and transmitter
-    SERCOM5->USART.CTRLB.reg = SERCOM_USART_CTRLB_RXEN |
-                               SERCOM_USART_CTRLB_TXEN;
-    while (SERCOM5->USART.CTRLB.bit.RXEN == 0 || SERCOM5->USART.CTRLB.bit.TXEN == 0);
+    SERCOM5->USART.CTRLB.reg = SERCOM_USART_CTRLB_RXEN | SERCOM_USART_CTRLB_TXEN;
+    while (SERCOM5->USART.SYNCBUSY.bit.CTRLB); // Wait for synchronization
 
     // Enable SERCOM5 USART
     SERCOM5->USART.CTRLA.reg |= SERCOM_USART_CTRLA_ENABLE;
-    while (SERCOM5->USART.CTRLA.bit.ENABLE == 0);
+    while (SERCOM5->USART.SYNCBUSY.bit.ENABLE); // Wait for synchronization
 }
 
 void uart_send(uint8_t data) {
-    while (!(SERCOM5->USART.INTFLAG.bit.DRE)); // Wait until DATA register empty
+    while (!(SERCOM5->USART.INTFLAG.bit.DRE)); // Wait until DATA register is empty
     SERCOM5->USART.DATA.reg = data;
 }
 
@@ -57,11 +56,11 @@ uint8_t uart_receive(void) {
 }
 
 int main(void) {
-    SystemInit();
+    SystemInit(); // Initialize system
 
-    configure_clocks();
-    configure_pins();
-    configure_uart();
+    configure_clocks(); // Configure clocks
+    configure_pins();   // Configure UART pins
+    configure_uart();   // Configure UART
 
     while (1) {
         uint8_t received = uart_receive(); // Receive a byte
