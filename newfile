@@ -11,14 +11,14 @@ void configure_clocks(void) {
 
 void configure_pins(void) {
     // Configure PA20 as TX (SERCOM5 PAD[2])
-    PORT->Group[0].DIRSET.reg = (1 << 20);
-    PORT->Group[0].PMUX[20 >> 1].bit.PMUXE = PORT_PMUX_PMUXE_D_Val;
-    PORT->Group[0].PINCFG[20].bit.PMUXEN = 1;
+    PORT->Group[0].DIRSET.reg = (1 << 20);  // Set PA20 as output
+    PORT->Group[0].PMUX[20 >> 1].bit.PMUXE = PORT_PMUX_PMUXE_D_Val; // Assign SERCOM function
+    PORT->Group[0].PINCFG[20].bit.PMUXEN = 1; // Enable peripheral multiplexer
 
     // Configure PA21 as RX (SERCOM5 PAD[3])
-    PORT->Group[0].DIRCLR.reg = (1 << 21);
-    PORT->Group[0].PMUX[21 >> 1].bit.PMUXO = PORT_PMUX_PMUXO_D_Val;
-    PORT->Group[0].PINCFG[21].bit.PMUXEN = 1;
+    PORT->Group[0].DIRCLR.reg = (1 << 21);  // Set PA21 as input
+    PORT->Group[0].PMUX[21 >> 1].bit.PMUXO = PORT_PMUX_PMUXO_D_Val; // Assign SERCOM function
+    PORT->Group[0].PINCFG[21].bit.PMUXEN = 1; // Enable peripheral multiplexer
 }
 
 void configure_uart(void) {
@@ -28,22 +28,22 @@ void configure_uart(void) {
 
     // Configure SERCOM5 as USART
     SERCOM5->USART.CTRLA.reg = SERCOM_USART_CTRLA_MODE_USART_INT_CLK | // Internal clock
-                               (SERCOM_USART_CTRLA_RXPO_Msk & (0x3 << SERCOM_USART_CTRLA_RXPO_Pos)) | // RX on PAD[3]
-                               (SERCOM_USART_CTRLA_TXPO_Msk & (0x1 << SERCOM_USART_CTRLA_TXPO_Pos)) | // TX on PAD[2]
+                               SERCOM_USART_CTRLA_RXPO(0x3) |          // RX on PAD[3]
+                               SERCOM_USART_CTRLA_TXPO(0x1) |          // TX on PAD[2]
                                SERCOM_USART_CTRLA_DORD;               // LSB first
 
     // Set baud rate to 19200
-    uint64_t baud = (uint64_t)65536 * (1000000 - 16 * 19200) / 1000000;
-    SERCOM5->USART.BAUD.reg = (uint16_t)baud;
+    uint16_t baud = (uint16_t)((1000000 / (16 * 19200)) - 1); // Formula for baud rate generation
+    SERCOM5->USART.BAUD.reg = baud;
 
     // Enable receiver and transmitter
     SERCOM5->USART.CTRLB.reg = SERCOM_USART_CTRLB_RXEN |
                                SERCOM_USART_CTRLB_TXEN;
-    while (SERCOM5->USART.CTRLB.bit.RXEN == 0 || SERCOM5->USART.CTRLB.bit.TXEN == 0);
+    while (SERCOM5->USART.SYNCBUSY.bit.CTRLB);
 
     // Enable SERCOM5 USART
     SERCOM5->USART.CTRLA.reg |= SERCOM_USART_CTRLA_ENABLE;
-    while (SERCOM5->USART.CTRLA.bit.ENABLE == 0);
+    while (SERCOM5->USART.SYNCBUSY.bit.ENABLE);
 }
 
 void uart_send(uint8_t data) {
