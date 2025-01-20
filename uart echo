@@ -1,3 +1,4 @@
+#include <sam.h>
 
 void configure_uart(void);
 
@@ -8,14 +9,20 @@ int main(void) {
 
     uint8_t received_data;
 
+    // Test transmission
     while (1) {
-        // Wait for data to be received
+        // Test send: Transmit 'A' periodically
+        while (!SERCOM5->USART.INTFLAG.bit.DRE);
+        SERCOM5->USART.DATA.reg = 'A'; // Send 'A'
+
+        for (volatile int i = 0; i < 100000; i++); // Delay loop
+
+        // Echo functionality
         if (SERCOM5->USART.INTFLAG.bit.RXC) {
             received_data = SERCOM5->USART.DATA.reg; // Read received data
 
-            // Wait for the data register to be empty before transmitting
             while (!SERCOM5->USART.INTFLAG.bit.DRE);
-            SERCOM5->USART.DATA.reg = received_data; // Send the received data back
+            SERCOM5->USART.DATA.reg = received_data; // Send it back
         }
     }
 }
@@ -47,8 +54,8 @@ void configure_uart(void) {
     SERCOM5->USART.CTRLB.reg = SERCOM_USART_CTRLB_TXEN | SERCOM_USART_CTRLB_RXEN;
     while (SERCOM5->USART.CTRLB.bit.TXEN || SERCOM5->USART.CTRLB.bit.RXEN);
 
-    // Set baud rate to 19200
-    uint64_t baud = 65536 - ((65536 * 16.0f * 19200) / 48000000.0f);
+    // Set baud rate to 19200 with 1 MHz clock
+    uint64_t baud = 65536 - ((65536 * 16.0f * 19200) / 1000000.0f);
     SERCOM5->USART.BAUD.reg = (uint16_t)baud;
 
     // Enable SERCOM5
