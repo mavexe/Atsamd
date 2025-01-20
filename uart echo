@@ -1,0 +1,57 @@
+
+void configure_uart(void);
+
+int main(void) {
+    SystemInit();
+
+    configure_uart();
+
+    uint8_t received_data;
+
+    while (1) {
+        // Wait for data to be received
+        if (SERCOM5->USART.INTFLAG.bit.RXC) {
+            received_data = SERCOM5->USART.DATA.reg; // Read received data
+
+            // Wait for the data register to be empty before transmitting
+            while (!SERCOM5->USART.INTFLAG.bit.DRE);
+            SERCOM5->USART.DATA.reg = received_data; // Send the received data back
+        }
+    }
+}
+
+void configure_uart(void) {
+    // Enable APB clock for SERCOM5
+    PM->APBCMASK.reg |= PM_APBCMASK_SERCOM5;
+
+    // Configure GCLK for SERCOM5
+    GCLK->CLKCTRL.reg = GCLK_CLKCTRL_ID(SERCOM5_GCLK_ID_CORE) |
+                        GCLK_CLKCTRL_GEN_GCLK0 | GCLK_CLKCTRL_CLKEN;
+    while (GCLK->STATUS.bit.SYNCBUSY);
+
+    // Configure pins PA20 (TX) and PA21 (RX) for SERCOM5
+    PORT->Group[0].PINCFG[20].bit.PMUXEN = 1;
+    PORT->Group[0].PINCFG[21].bit.PMUXEN = 1;
+    PORT->Group[0].PMUX[10].reg = PORT_PMUX_PMUXE_D | PORT_PMUX_PMUXO_D;
+
+    // Reset SERCOM5
+    SERCOM5->USART.CTRLA.reg = SERCOM_USART_CTRLA_SWRST;
+    while (SERCOM5->USART.CTRLA.bit.SWRST);
+
+    // Configure SERCOM5 as UART
+    SERCOM5->USART.CTRLA.reg = SERCOM_USART_CTRLA_MODE_USART_INT_CLK |
+                                (3 << SERCOM_USART_CTRLA_RXPO_Pos) | // RX on PAD[3]
+                                (1 << SERCOM_USART_CTRLA_TXPO_Pos) | // TX on PAD[1]
+                                SERCOM_USART_CTRLA_DORD;     // LSB first
+
+    SERCOM5->USART.CTRLB.reg = SERCOM_USART_CTRLB_TXEN | SERCOM_USART_CTRLB_RXEN;
+    while (SERCOM5->USART.CTRLB.bit.TXEN || SERCOM5->USART.CTRLB.bit.RXEN);
+
+    // Set baud rate to 19200
+    uint64_t baud = 65536 - ((65536 * 16.0f * 19200) / 48000000.0f);
+    SERCOM5->USART.BAUD.reg = (uint16_t)baud;
+
+    // Enable SERCOM5
+    SERCOM5->USART.CTRLA.bit.ENABLE = 1;
+    while (SERCOM5->USART.CTRLA.bit.ENABLE);
+}
