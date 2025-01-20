@@ -1,12 +1,10 @@
-
-// Настройка UART (SERCOM5, PA20 - TX, PA21 - RX)
 void configure_uart(void) {
     // Включение тактирования для SERCOM5
     PM->APBCMASK.reg |= PM_APBCMASK_SERCOM5;
 
     // Настройка генератора тактов для SERCOM5
-    GCLK->CLKCTRL.reg = GCLK_CLKCTRL_ID(GCLK_CLKCTRL_ID_SERCOM5_CORE) | 
-                        GCLK_CLKCTRL_GEN(0) | // Используем GCLK0 с частотой 1 МГц
+    GCLK->CLKCTRL.reg = GCLK_CLKCTRL_ID_SERCOM5_CORE | 
+                        GCLK_CLKCTRL_GEN_GCLK0 | 
                         GCLK_CLKCTRL_CLKEN;
     while (GCLK->STATUS.bit.SYNCBUSY);
 
@@ -17,16 +15,15 @@ void configure_uart(void) {
 
     // Отключение SERCOM перед настройкой
     SERCOM5->USART.CTRLA.reg = SERCOM_USART_CTRLA_SWRST;
-    while (SERCOM5->USART.SYNCBUSY.bit.SWRST);
+    while (SERCOM5->USART.CTRLA.bit.SWRST || SERCOM5->USART.SYNCBUSY.bit.SWRST);
 
-    // Настройка режима UART: асинхронный, 8-N-1
-    SERCOM5->USART.CTRLA.reg = SERCOM_USART_CTRLA_MODE_USART_INT_CLK | // Режим UART с внутренними часами
-                                SERCOM_USART_CTRLA_RXPO(3) |            // RX на PAD[3] (PA21)
-                                SERCOM_USART_CTRLA_TXPO(1) |            // TX на PAD[2] (PA20)
+   SERCOM5->USART.CTRLA.reg = SERCOM_USART_CTRLA_MODE_USART_INT_CLK | // Режим UART с внутренними часами
+                                (3 << SERCOM_USART_CTRLA_RXPO_Pos) |   // RX на PAD[3] (PA21)
+                                (1 << SERCOM_USART_CTRLA_TXPO_Pos) |   // TX на PAD[2] (PA20)
                                 SERCOM_USART_CTRLA_DORD;               // LSB-first
 
     // Настройка скорости передачи данных (BAUD)
-    uint64_t baud = 65536 - ((65536 * 16 * 19200) / 1000000);
+    uint64_t baud = (uint64_t)65536 * (1000000 / (16 * 19200));
     SERCOM5->USART.BAUD.reg = (uint16_t)baud;
 
     // Включение приемника и передатчика
