@@ -28,8 +28,8 @@ void configure_uart(void) {
 
     // Configure SERCOM5 as USART
     SERCOM5->USART.CTRLA.reg = SERCOM_USART_CTRLA_MODE_USART_INT_CLK | // Internal clock
-                               SERCOM_USART_CTRLA_RXPO(0x3) |          // RX on PAD[3]
-                               SERCOM_USART_CTRLA_TXPO(0x1) |          // TX on PAD[2]
+                               (0x3 << SERCOM_USART_CTRLA_RXPO_Pos) |  // RX on PAD[3]
+                               (0x1 << SERCOM_USART_CTRLA_TXPO_Pos) |  // TX on PAD[2]
                                SERCOM_USART_CTRLA_DORD;               // LSB first
 
     // Set baud rate to 19200
@@ -39,11 +39,11 @@ void configure_uart(void) {
     // Enable receiver and transmitter
     SERCOM5->USART.CTRLB.reg = SERCOM_USART_CTRLB_RXEN |
                                SERCOM_USART_CTRLB_TXEN;
-    while (SERCOM5->USART.SYNCBUSY.bit.CTRLB);
+    while (SERCOM5->USART.CTRLB.bit.RXEN == 0 || SERCOM5->USART.CTRLB.bit.TXEN == 0);
 
     // Enable SERCOM5 USART
     SERCOM5->USART.CTRLA.reg |= SERCOM_USART_CTRLA_ENABLE;
-    while (SERCOM5->USART.SYNCBUSY.bit.ENABLE);
+    while (SERCOM5->USART.CTRLA.bit.ENABLE == 0);
 }
 
 void uart_send(uint8_t data) {
