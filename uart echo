@@ -1,3 +1,5 @@
+#include <sam.h>
+
 void configure_uart(void);
 
 int main(void) {
@@ -7,14 +9,22 @@ int main(void) {
 
     uint8_t received_data;
 
+    // Test TX: Send 'T' to indicate startup
+    while (!SERCOM5->USART.INTFLAG.bit.DRE);
+    SERCOM5->USART.DATA.reg = 'T';
+
     while (1) {
         // Wait for data to be received
         if (SERCOM5->USART.INTFLAG.bit.RXC) {
             received_data = SERCOM5->USART.DATA.reg; // Read received data
 
-            // Wait for the data register to be empty before transmitting
+            // Test RX: Toggle TX after receiving data
             while (!SERCOM5->USART.INTFLAG.bit.DRE);
             SERCOM5->USART.DATA.reg = received_data; // Send the received data back
+        } else {
+            // Continuously send 'W' while waiting for data
+            while (!SERCOM5->USART.INTFLAG.bit.DRE);
+            SERCOM5->USART.DATA.reg = 'W';
         }
     }
 }
@@ -24,6 +34,9 @@ void configure_uart(void) {
     PM->APBCMASK.reg |= PM_APBCMASK_SERCOM5;
 
     // Configure GCLK for SERCOM5
+    GCLK->GENCTRL.reg = GCLK_GENCTRL_ID(0) | GCLK_GENCTRL_SRC_OSC8M | GCLK_GENCTRL_GENEN;
+    while (GCLK->STATUS.bit.SYNCBUSY);
+
     GCLK->CLKCTRL.reg = GCLK_CLKCTRL_ID(SERCOM5_GCLK_ID_CORE) |
                         GCLK_CLKCTRL_GEN_GCLK0 | GCLK_CLKCTRL_CLKEN;
     while (GCLK->STATUS.bit.SYNCBUSY);
@@ -41,7 +54,7 @@ void configure_uart(void) {
     SERCOM5->USART.CTRLA.reg = SERCOM_USART_CTRLA_MODE_USART_INT_CLK |
                                 (3 << SERCOM_USART_CTRLA_RXPO_Pos) | // RX on PAD[3]
                                 (1 << SERCOM_USART_CTRLA_TXPO_Pos) | // TX on PAD[2]
-                                SERCOM_USART_CTRLA_DORD;     // LSB first
+                                SERCOM_USART_CTRLA_DORD;             // LSB first
 
     SERCOM5->USART.CTRLB.reg = SERCOM_USART_CTRLB_TXEN | SERCOM_USART_CTRLB_RXEN;
     while (SERCOM5->USART.CTRLB.bit.TXEN || SERCOM5->USART.CTRLB.bit.RXEN);
