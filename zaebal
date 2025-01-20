@@ -1,44 +1,74 @@
-void configure_uart_sercom3(uint32_t baud_rate, uint8_t rx_pin, uint8_t tx_pin) {
-    // Включение тактирования для SERCOM3
-    PM->APBCMASK.reg |= PM_APBCMASK_SERCOM3;
-    GCLK->CLKCTRL.reg = GCLK_CLKCTRL_ID_SERCOM3_CORE |
-                        GCLK_CLKCTRL_GEN(0) |
-                        GCLK_CLKCTRL_CLKEN;
-    while (GCLK->STATUS.bit.SYNCBUSY);
+#include <samd20.h>
 
-    // Настройка пинов RX и TX для SERCOM3
-    PORT->Group[rx_pin / 32].PINCFG[rx_pin % 32].reg |= PORT_PINCFG_PMUXEN;
-    PORT->Group[tx_pin / 32].PINCFG[tx_pin % 32].reg |= PORT_PINCFG_PMUXEN;
-    PORT->Group[rx_pin / 32].PMUX[rx_pin % 32 / 2].reg = PORT_PMUX_PMUXE(3) | PORT_PMUX_PMUXO(3);
+// Определения выводов
+#define PIN_TX PA20
+#define PIN_RX PA21
 
-    // Настройка SERCOM3 в режиме UART
-    SERCOM3->USART.CTRLA.reg = SERCOM_USART_CTRLA_MODE_USART_INT_CLK |
-                               SERCOM_USART_CTRLA_RXPO(1) | // RX на PAD[1]
-                               (0x0 << SERCOM_USART_CTRLA_TXPO_Pos); // TX на PAD[0]
-    SERCOM3->USART.BAUD.reg = (uint16_t)(SYSTEM_CLOCK / (16 * baud_rate)); // Настройка BAUD
-    SERCOM3->USART.CTRLB.reg = SERCOM_USART_CTRLB_TXEN | SERCOM_USART_CTRLB_RXEN; // Включение TX и RX
-    while (SERCOM3->USART.SYNCBUSY.bit.CTRLB);
-    SERCOM3->USART.CTRLA.reg |= SERCOM_USART_CTRLA_ENABLE;
-    while (SERCOM3->USART.SYNCBUSY.bit.ENABLE);
+void configure_clocks(void) {
+    // Включение тактирования для SERCOM5
+    PM->APBCMASK.reg |= PM_APBCMASK_SERCOM5;
+
+    // Настройка генератора GCLK для SERCOM5
+    GCLK->CLKCTRL.reg = GCLK_CLKCTRL_ID(SERCOM5_GCLK_ID_CORE) |
+                        GCLK_CLKCTRL_GEN_GCLK0 | GCLK_CLKCTRL_CLKEN;
+    while (GCLK->STATUS.reg & GCLK_STATUS_SYNCBUSY);
 }
 
-// Функция передачи данных через UART
-void transmit_data_sercom3(uint8_t data) {
-    while (!(SERCOM3->USART.INTFLAG.bit.DRE)); // Ожидание готовности передатчика
-    SERCOM3->USART.DATA.reg = data; // Передача данных
+void configure_pins(void) {
+    // Настройка мультиплексирования для PA20 (TX) и PA21 (RX)
+    PORT->Group[0].PINCFG[20].reg = PORT_PINCFG_PMUXEN; // PA20 TX
+    PORT->Group[0].PINCFG[21].reg = PORT_PINCFG_PMUXEN; // PA21 RX
+
+    PORT->Group[0].PMUX[20 >> 1].reg = PORT_PMUX_PMUXE_D | PORT_PMUX_PMUXO_D; // MUX D для SERCOM5
+}
+
+void configure_sercom5_uart(void) {
+    // Сброс конфигурации
+    SERCOM5->USART.CTRLA.reg = SERCOM_USART_CTRLA_SWRST;
+    while (SERCOM5->USART.CTRLA.reg & SERCOM_USART_CTRLA_SWRST);
+
+    // Настройка CTRLA
+    SERCOM5->USART.CTRLA.reg = SERCOM_USART_CTRLA_MODE_USART_INT_CLK | // Работа от внутреннего тактового сигнала
+                               SERCOM_USART_CTRLA_RXPO(3) |            // RX на PAD[3]
+                               SERCOM_USART_CTRLA_TXPO(0) |            // TX на PAD[0]
+                               SERCOM_USART_CTRLA_DORD;               // Младший бит первым
+
+    // Настройка CTRLB
+    SERCOM5->USART.CTRLB.reg = SERCOM_USART_CTRLB_RXEN |  // Включение RX
+                               SERCOM_USART_CTRLB_TXEN;  // Включение TX
+    while (SERCOM5->USART.SYNCBUSY.reg & SERCOM_USART_SYNCBUSY_CTRLB);
+
+    // Настройка скорости передачи (Baud Rate)
+    uint64_t baud = 65536 - ((65536 * 16.0f * 19200) / 48000000); // Формула из даташита
+    SERCOM5->USART.BAUD.reg = (uint16_t)baud;
+
+    // Включение SERCOM5
+    SERCOM5->USART.CTRLA.reg |= SERCOM_USART_CTRLA_ENABLE;
+    while (SERCOM5->USART.SYNCBUSY.reg & SERCOM_USART_SYNCBUSY_ENABLE);
+}
+
+void uart_write(uint8_t data) {
+    while (!(SERCOM5->USART.INTFLAG.reg & SERCOM_USART_INTFLAG_DRE)); // Ожидание готовности буфера
+    SERCOM5->USART.DATA.reg = data;
+}
+
+uint8_t uart_read(void) {
+    while (!(SERCOM5->USART.INTFLAG.reg & SERCOM_USART_INTFLAG_RXC)); // Ожидание данных
+    return SERCOM5->USART.DATA.reg;
+}
+
+void uart_echo(void) {
+    uint8_t data = uart_read();
+    uart_write(data);
 }
 
 int main(void) {
-    SystemInit();
+    // Инициализация системы
+    configure_clocks();
+    configure_pins();
+    configure_sercom5_uart();
 
-    // Настройка UART на SERCOM3 с пинами RX=PA20, TX=PA21
-    configure_uart_sercom3(BAUD_RATE, 20, 21);
-
-    // Постоянная отправка символа '1'
     while (1) {
-        transmit_data_sercom3('1');
-
-        // Задержка перед следующей отправкой
-        for (volatile uint32_t delay = 0; delay < 100000; delay++);
+        uart_echo();
     }
 }
