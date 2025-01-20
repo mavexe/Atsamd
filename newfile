@@ -28,8 +28,8 @@ void configure_uart(void) {
 
     // Configure SERCOM5 as USART
     SERCOM5->USART.CTRLA.reg = SERCOM_USART_CTRLA_MODE_USART_INT_CLK | // Internal clock
-                               SERCOM_USART_CTRLA_RXPO(0x3) |          // RX on PAD[3]
-                               SERCOM_USART_CTRLA_TXPO(0x1) |          // TX on PAD[2]
+                               (SERCOM_USART_CTRLA_RXPO_Msk & (0x3 << SERCOM_USART_CTRLA_RXPO_Pos)) | // RX on PAD[3]
+                               (SERCOM_USART_CTRLA_TXPO_Msk & (0x1 << SERCOM_USART_CTRLA_TXPO_Pos)) | // TX on PAD[2]
                                SERCOM_USART_CTRLA_DORD;               // LSB first
 
     // Set baud rate to 19200
