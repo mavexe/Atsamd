@@ -22,15 +22,11 @@ void init_uart(void) {
     SERCOM5->USART.CTRLB.reg = SERCOM_USART_CTRLB_RXEN | // Включение приемника
                                SERCOM_USART_CTRLB_TXEN; // Включение передатчика
 
-    while (SERCOM5->USART.SYNCBUSY.reg); // Ожидание завершения синхронизации
-
     // Установка скорости передачи данных (19200 бод при 1 MHz)
     SERCOM5->USART.BAUD.reg = (1000000 / (16 * 19200)) - 1; // Формула: BAUD = (f_ref / (16 * f_baud)) - 1
 
     // Включение UART
     SERCOM5->USART.CTRLA.reg |= SERCOM_USART_CTRLA_ENABLE;
-
-    while (SERCOM5->USART.SYNCBUSY.reg); // Ожидание завершения синхронизации
 }
 
 void init_i2c_slave(void) {
@@ -56,12 +52,8 @@ void init_i2c_slave(void) {
 
     SERCOM3->I2CS.CTRLB.reg = SERCOM_I2CS_CTRLB_SMEN; // Умный режим
 
-    while (SERCOM3->I2CS.SYNCBUSY.reg); // Ожидание завершения синхронизации
-
     // Включение модуля I2C
     SERCOM3->I2CS.CTRLA.reg |= SERCOM_I2CS_CTRLA_ENABLE;
-
-    while (SERCOM3->I2CS.SYNCBUSY.reg); // Ожидание завершения синхронизации
 }
 
 void i2c_to_uart(void) {
