@@ -37,6 +37,12 @@ void uart_debug(const char *msg) {
     }
 }
 
+// Функция для отправки одного байта через UART
+void uart_write_byte(uint8_t data) {
+    while (!(SERCOM5->USART.INTFLAG.reg & SERCOM_USART_INTFLAG_DRE)); // Ожидание готовности передатчика
+    SERCOM5->USART.DATA.reg = data;
+}
+
 // Инициализация I2C Slave (SERCOM3, PA22 - SDA, PA23 - SCL)
 void init_i2c_sercom3(void) {
     // Включение тактирования для SERCOM3
@@ -83,3 +89,4 @@ int main(void) {
     while (1) {
         // Основной цикл (не должен сюда попасть)
     }
+}
