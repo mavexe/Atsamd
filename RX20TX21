@@ -1,3 +1,4 @@
+// Инициализация UART (SERCOM5)
 void init_uart(void) {
     PM->APBCMASK.reg |= PM_APBCMASK_SERCOM5;
 
@@ -54,7 +55,8 @@ void uart_send(uint8_t data) {
 // Основной обработчик I2C
 void handle_i2c(void) {
     if (SERCOM3->I2CS.INTFLAG.reg & SERCOM_I2CS_INTFLAG_AMATCH) {
-        SERCOM3->I2CS.STATUS.reg |= SERCOM_I2CS_STATUS_BUSSTATE(2);
+        // Адресное совпадение, обновление состояния шины
+        SERCOM3->I2CS.STATUS.reg |= SERCOM_I2CS_STATUS_BUSSTATE(0x2); // Slave receives
     }
 
     if (SERCOM3->I2CS.INTFLAG.reg & SERCOM_I2CS_INTFLAG_DRDY) {
