@@ -71,12 +71,20 @@ void i2c_to_uart(void) {
     }
 }
 
+void uart_test(void) {
+    while (1) {
+        uart_write_byte(0xAA); // Отправить тестовый байт 0xAA
+        for (volatile int i = 0; i < 100000; i++); // Задержка
+    }
+}
+
+
 int main(void) {
     SystemInit();
     init_uart(); // Инициализация UART
     init_i2c_slave(); // Инициализация I2C Slave
 
-    i2c_to_uart(); // Передача данных с I2C на UART
+    uart_test();
 
     while (1) {
         // Основной цикл (не должен сюда попасть)
