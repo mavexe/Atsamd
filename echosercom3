@@ -1,0 +1,53 @@
+void init_uart(void) {
+    // Включение тактирования для модуля SERCOM3
+    PM->APBCMASK.reg |= PM_APBCMASK_SERCOM3;
+
+    // Настройка генератора для SERCOM3 на 1 MHz
+    GCLK->CLKCTRL.reg = GCLK_CLKCTRL_ID(SERCOM3_GCLK_ID_CORE) |
+                        GCLK_CLKCTRL_CLKEN |
+                        GCLK_CLKCTRL_GEN(0); // Генератор 0
+
+    // Настройка пинов PA16 и PA17 для работы с UART (SERCOM3)
+    PORT->Group[0].PINCFG[16].reg = PORT_PINCFG_PMUXEN; // Включение мультиплексирования для PA16
+    PORT->Group[0].PINCFG[17].reg = PORT_PINCFG_PMUXEN; // Включение мультиплексирования для PA17
+
+    PORT->Group[0].PMUX[8].reg = PORT_PMUX_PMUXE(2) | PORT_PMUX_PMUXO(2); // SERCOM3: PA16 (PAD[2]), PA17 (PAD[3])
+
+    // Конфигурация SERCOM3 для UART
+    SERCOM3->USART.CTRLA.reg = SERCOM_USART_CTRLA_MODE_USART_INT_CLK | // Внутренний источник тактирования
+                               SERCOM_USART_CTRLA_DORD |              // Младший бит вперед
+                               (0x3 << SERCOM_USART_CTRLA_RXPO_Pos) | // RX на PAD[3] (PA17)
+                               (0x1 << SERCOM_USART_CTRLA_TXPO_Pos);  // TX на PAD[2] (PA16)
+
+    SERCOM3->USART.CTRLB.reg = SERCOM_USART_CTRLB_RXEN | // Включение приемника
+                               SERCOM_USART_CTRLB_TXEN; // Включение передатчика
+
+    // Установка скорости передачи данных (19200 бод при 1 MHz)
+    SERCOM3->USART.BAUD.reg = (1000000 / (16 * 19200)) - 1; // Формула: BAUD = (f_ref / (16 * f_baud)) - 1
+
+    // Включение UART
+    SERCOM3->USART.CTRLA.reg |= SERCOM_USART_CTRLA_ENABLE;
+}
+
+void uart_echo(void) {
+    while (1) {
+        // Ожидание данных
+        while (!(SERCOM3->USART.INTFLAG.reg & SERCOM_USART_INTFLAG_RXC));
+        uint8_t data = SERCOM3->USART.DATA.reg; // Чтение данных
+
+        // Ожидание готовности передатчика
+        while (!(SERCOM3->USART.INTFLAG.reg & SERCOM_USART_INTFLAG_DRE));
+        SERCOM3->USART.DATA.reg = data; // Отправка данных обратно
+    }
+}
+
+int main(void) {
+    SystemInit();
+    init_uart();
+
+    uart_echo(); // Запуск эхо-функции
+
+    while (1) {
+        // Основной цикл (не должен сюда попасть)
+    }
+}
