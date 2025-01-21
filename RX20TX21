@@ -1,46 +1,78 @@
-#define SYSTEM_CLOCK 1000000 // Частота тактового сигнала 1 МГц
-#define BAUD_RATE 19200      // Скорость передачи данных
+void init_uart(void) {
+    PM->APBCMASK.reg |= PM_APBCMASK_SERCOM5;
 
-// Функция настройки SERCOM в режиме UART
-void configure_uart(Sercom *sercom, uint8_t rx_pin, uint8_t tx_pin) {
-    // Включение тактирования для SERCOM
-    PM->APBCMASK.reg |= (1 << (((uint32_t)sercom - (uint32_t)SERCOM0) / 0x400));
-    GCLK->CLKCTRL.reg = GCLK_CLKCTRL_ID((((uint32_t)sercom - (uint32_t)SERCOM0) / 0x400)) |
-                        GCLK_CLKCTRL_GEN(0) |
-                        GCLK_CLKCTRL_CLKEN;
-    while (GCLK->STATUS.bit.SYNCBUSY);
+    GCLK->CLKCTRL.reg = GCLK_CLKCTRL_ID(SERCOM5_GCLK_ID_CORE) |
+                        GCLK_CLKCTRL_CLKEN |
+                        GCLK_CLKCTRL_GEN(0);
 
-    // Настройка пинов RX и TX
-    PORT->Group[rx_pin / 32].PINCFG[rx_pin % 32].reg |= PORT_PINCFG_PMUXEN;
-    PORT->Group[tx_pin / 32].PINCFG[tx_pin % 32].reg |= PORT_PINCFG_PMUXEN;
-    PORT->Group[rx_pin / 32].PMUX[rx_pin % 32 / 2].reg = PORT_PMUX_PMUXE(3) | PORT_PMUX_PMUXO(3);
+    PORT->Group[0].PINCFG[20].reg = PORT_PINCFG_PMUXEN;
+    PORT->Group[0].PINCFG[21].reg = PORT_PINCFG_PMUXEN;
+    PORT->Group[0].PMUX[10].reg = PORT_PMUX_PMUXE(2) | PORT_PMUX_PMUXO(2);
 
-    // Настройка SERCOM в режиме UART
-    sercom->USART.CTRLA.reg = SERCOM_USART_CTRLA_MODE_USART_INT_CLK |
-                               SERCOM_USART_CTRLA_RXPO(1) | // RX на PAD[1]
-                               (0x0 << SERCOM_USART_CTRLA_TXPO_Pos); // TX на PAD[0]
-    sercom->USART.BAUD.reg = (uint16_t)(SYSTEM_CLOCK / (16 * BAUD_RATE)); // Настройка BAUD
-    sercom->USART.CTRLA.reg |= SERCOM_USART_CTRLA_ENABLE;
-    while (sercom->USART.SYNCBUSY.bit.ENABLE);
+    SERCOM5->USART.CTRLA.reg = SERCOM_USART_CTRLA_MODE_USART_INT_CLK |
+                               SERCOM_USART_CTRLA_DORD |
+                               (0x3 << SERCOM_USART_CTRLA_RXPO_Pos) |
+                               (0x1 << SERCOM_USART_CTRLA_TXPO_Pos);
+
+    SERCOM5->USART.CTRLB.reg = SERCOM_USART_CTRLB_RXEN |
+                               SERCOM_USART_CTRLB_TXEN;
+
+    SERCOM5->USART.BAUD.reg = (1000000 / (16 * 19200)) - 1;
+
+    SERCOM5->USART.CTRLA.reg |= SERCOM_USART_CTRLA_ENABLE;
 }
 
-// Функция передачи данных через UART
-void transmit_data(Sercom *sercom, uint8_t data) {
-    while (!(sercom->USART.INTFLAG.bit.DRE)); // Ожидание готовности передатчика
-    sercom->USART.DATA.reg = data; // Передача данных
+// Инициализация I2C Slave (SERCOM3)
+void init_i2c_slave(void) {
+    PM->APBCMASK.reg |= PM_APBCMASK_SERCOM3;
+
+    GCLK->CLKCTRL.reg = GCLK_CLKCTRL_ID(SERCOM3_GCLK_ID_CORE) |
+                        GCLK_CLKCTRL_CLKEN |
+                        GCLK_CLKCTRL_GEN(0);
+
+    PORT->Group[0].PINCFG[22].reg = PORT_PINCFG_PMUXEN;
+    PORT->Group[0].PINCFG[23].reg = PORT_PINCFG_PMUXEN;
+    PORT->Group[0].PMUX[11].reg = PORT_PMUX_PMUXE(2) | PORT_PMUX_PMUXO(2);
+
+    SERCOM3->I2CS.CTRLA.reg = SERCOM_I2CS_CTRLA_MODE_I2C_SLAVE |
+                               SERCOM_I2CS_CTRLA_SDAHOLD(0x2);
+
+    SERCOM3->I2CS.ADDR.reg = SERCOM_I2CS_ADDR_ADDR(16);
+
+    SERCOM3->I2CS.CTRLA.reg |= SERCOM_I2CS_CTRLA_ENABLE;
+    SERCOM3->I2CS.INTENSET.reg = SERCOM_I2CS_INTENSET_PREC |  // Stop condition
+                                  SERCOM_I2CS_INTENSET_AMATCH |  // Address match
+                                  SERCOM_I2CS_INTENSET_DRDY;    // Data ready
+}
+
+// Передача данных по UART
+void uart_send(uint8_t data) {
+    while (!(SERCOM5->USART.INTFLAG.reg & SERCOM_USART_INTFLAG_DRE));
+    SERCOM5->USART.DATA.reg = data;
+}
+
+// Основной обработчик I2C
+void handle_i2c(void) {
+    if (SERCOM3->I2CS.INTFLAG.reg & SERCOM_I2CS_INTFLAG_AMATCH) {
+        SERCOM3->I2CS.STATUS.reg |= SERCOM_I2CS_STATUS_BUSSTATE(2);
+    }
+
+    if (SERCOM3->I2CS.INTFLAG.reg & SERCOM_I2CS_INTFLAG_DRDY) {
+        uint8_t received_data = SERCOM3->I2CS.DATA.reg;
+        uart_send(received_data);
+    }
+
+    if (SERCOM3->I2CS.INTFLAG.reg & SERCOM_I2CS_INTFLAG_PREC) {
+        SERCOM3->I2CS.INTFLAG.reg = SERCOM_I2CS_INTFLAG_PREC;
+    }
 }
 
 int main(void) {
     SystemInit();
+    init_uart();
+    init_i2c_slave();
 
-    // Настройка UART на SERCOM для пинов RX=PA20, TX=PA21
-    configure_uart(SERCOM3, 20, 21); // SERCOM3: RX=PA20, TX=PA21
-
-    // Постоянная отправка символа '1'
     while (1) {
-        transmit_data(SERCOM3, '1');
-
-        // Задержка перед следующей отправкой
-        for (volatile uint32_t delay = 0; delay < 100000; delay++);
+        handle_i2c();
     }
 }
