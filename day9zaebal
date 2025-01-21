@@ -48,37 +48,12 @@ void init_i2c_slave(void) {
     SERCOM3->I2CS.CTRLA.reg = SERCOM_I2CS_CTRLA_MODE_I2C_SLAVE | // Режим I2C Slave
                                SERCOM_I2CS_CTRLA_SDAHOLD(0x2);  // Задержка удержания SDA
 
-    SERCOM3->I2CS.ADDR.reg = SERCOM_I2CS_ADDR_ADDR(0x10) |       // Адрес Slave 0x10
-                              SERCOM_I2CS_ADDR_MASK(0x00);       // Маска адреса
+    SERCOM3->I2CS.ADDR.reg = (SERCOM_I2CS_ADDR_ADDR(0x10)); // Установка адреса Slave 0x10
 
     SERCOM3->I2CS.CTRLB.reg = SERCOM_I2CS_CTRLB_SMEN; // Умный режим
 
     // Включение модуля I2C
     SERCOM3->I2CS.CTRLA.reg |= SERCOM_I2CS_CTRLA_ENABLE;
-}
-
-void i2c_to_uart(void) {
-    while (1) {
-        // Ожидание данных от мастера
-        while (!(SERCOM3->I2CS.INTFLAG.reg & SERCOM_I2CS_INTFLAG_DRDY));
-        uint8_t data = SERCOM3->I2CS.DATA.reg; // Чтение данных
-
-        // Передача данных на UART
-        while (!(SERCOM5->USART.INTFLAG.reg & SERCOM_USART_INTFLAG_DRE));
-        SERCOM5->USART.DATA.reg = data; // Отправка данных
-
-        // Завершение передачи I2C
-        SERCOM3->I2CS.CTRLB.reg |= SERCOM_I2CS_CTRLB_ACKACT; // Подтверждение
-        SERCOM3->I2CS.CTRLB.reg |= SERCOM_I2CS_CTRLB_CMD(0x3); // Завершение операции
-    }
-}
-
-int main(void) {
-    SystemInit();
-    init_uart();
-    init_i2c_slave();
-
-    i2c_to_uart(); // Передача данных из I2C в UART
 
     while (1) {
         // Основной цикл (не должен сюда попасть)
