@@ -43,8 +43,10 @@ void init_i2c_slave(void) {
 
     // Конфигурация SERCOM3 как I2C Slave
     SERCOM3->I2CS.CTRLA.reg = SERCOM_I2CS_CTRLA_MODE_I2C_SLAVE |
-                               SERCOM_I2CS_CTRLA_SCLSM |
+                               (1 << SERCOM_I2CS_CTRLA_SCLSM_Pos) |  // Установка бита SCLSM вручную
                                SERCOM_I2CS_CTRLA_ENABLE;
+
+    // Установка I2C Slave адреса
     SERCOM3->I2CS.ADDR.reg = (16 << 1) | SERCOM_I2CS_ADDR_ADDRMASK(0x7F);
 }
 
