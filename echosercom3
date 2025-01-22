@@ -1,3 +1,5 @@
+#include "samd20.h"
+
 void init_uart(void) {
     // Включение тактирования для SERCOM5 (UART)
     PM->APBCMASK.reg |= PM_APBCMASK_SERCOM5;
@@ -37,14 +39,14 @@ void init_i2c_slave(void) {
     // Настройка пинов PA22 и PA23 для I2C
     PORT->Group[0].PINCFG[22].reg = PORT_PINCFG_PMUXEN;
     PORT->Group[0].PINCFG[23].reg = PORT_PINCFG_PMUXEN;
-    PORT->Group[0].PMUX[11].reg = PORT_PMUX_PMUXE(2) | PORT_PMUX_PMUXO(2);
+    PORT->Group[0].PMUX[11].reg = PORT_PMUX_PMUXE(3) | PORT_PMUX_PMUXO(3);
 
     // Конфигурация SERCOM3 как I2C Slave
     SERCOM3->I2CS.CTRLA.reg = SERCOM_I2CS_CTRLA_MODE_I2C_SLAVE |
                                SERCOM_I2CS_CTRLA_ENABLE;
 
     // Установка I2C Slave адреса
-    SERCOM3->I2CS.ADDR.reg = (16 << 1) | SERCOM_I2CS_ADDR_ADDRMASK(0x7F);
+    SERCOM3->I2CS.ADDR.reg = (16 << 1); // Установка адреса 16
 }
 
 void i2c_to_uart(void) {
