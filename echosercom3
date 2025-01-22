@@ -1,5 +1,3 @@
-#include "samd20.h"
-
 void init_uart(void) {
     // Включение тактирования для SERCOM5 (UART)
     PM->APBCMASK.reg |= PM_APBCMASK_SERCOM5;
@@ -43,7 +41,6 @@ void init_i2c_slave(void) {
 
     // Конфигурация SERCOM3 как I2C Slave
     SERCOM3->I2CS.CTRLA.reg = SERCOM_I2CS_CTRLA_MODE_I2C_SLAVE |
-                               (1 << SERCOM_I2CS_CTRLA_SCLSM_Pos) |  // Установка бита SCLSM вручную
                                SERCOM_I2CS_CTRLA_ENABLE;
 
     // Установка I2C Slave адреса
@@ -66,14 +63,14 @@ void i2c_to_uart(void) {
 int main(void) {
     SystemInit();
 
-    // Инициализация периферии
+    // Инициализация UART и I2C
     init_uart();
     init_i2c_slave();
 
-    // Основной цикл
+    // Основной цикл передачи данных с I2C на UART
     i2c_to_uart();
 
     while (1) {
-        // Здесь программа не должна останавливаться
+        // Запасной цикл
     }
 }
