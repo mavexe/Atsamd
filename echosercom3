@@ -6,10 +6,10 @@ void init_uart(void) {
                         GCLK_CLKCTRL_CLKEN |
                         GCLK_CLKCTRL_GEN(0);
 
-    // Настраиваем пины PA20 и PA21 для UART
+    // Настройка пинов PA20 и PA21 для UART
     PORT->Group[0].PINCFG[20].reg = PORT_PINCFG_PMUXEN;
     PORT->Group[0].PINCFG[21].reg = PORT_PINCFG_PMUXEN;
-    PORT->Group[0].PMUX[10].reg = PORT_PMUX_PMUXE(2) | PORT_PMUX_PMUXO(2); // SERCOM5 на PA20/PA21
+    PORT->Group[0].PMUX[10].reg = PORT_PMUX_PMUXE(2) | PORT_PMUX_PMUXO(2); // SERCOM5 на PA20 (TX) и PA21 (RX)
 
     // Конфигурация UART на SERCOM5
     SERCOM5->USART.CTRLA.reg = SERCOM_USART_CTRLA_MODE_USART_INT_CLK |
@@ -24,36 +24,38 @@ void init_uart(void) {
     SERCOM5->USART.CTRLA.reg |= SERCOM_USART_CTRLA_ENABLE; // Включаем модуль UART
 }
 
-// Инициализация I2C в режиме Slave на SERCOM3 (PA22, PA23)
+// Инициализация I2C Slave на SERCOM3 (PA22 - SDA, PA23 - SCL)
 void init_i2c_slave(void) {
     PM->APBCMASK.reg |= PM_APBCMASK_SERCOM3; // Включаем тактирование для SERCOM3
 
-    // Настраиваем генератор тактовой частоты для SERCOM3
+    // Настройка генератора тактовой частоты для SERCOM3
     GCLK->CLKCTRL.reg = GCLK_CLKCTRL_ID(SERCOM3_GCLK_ID_CORE) |
                         GCLK_CLKCTRL_CLKEN |
                         GCLK_CLKCTRL_GEN(0);
 
-    // Настраиваем пины PA22 и PA23 для I2C
+    // Настройка пинов PA22 и PA23 для I2C
     PORT->Group[0].PINCFG[22].reg = PORT_PINCFG_PMUXEN;
     PORT->Group[0].PINCFG[23].reg = PORT_PINCFG_PMUXEN;
-    PORT->Group[0].PMUX[11].reg = PORT_PMUX_PMUXE(3) | PORT_PMUX_PMUXO(3); // SERCOM3 на PA22/PA23
+    PORT->Group[0].PMUX[11].reg = PORT_PMUX_PMUXE(3) | PORT_PMUX_PMUXO(3); // SERCOM3 на PA22 (SDA) и PA23 (SCL)
 
     // Конфигурация SERCOM3 как I2C Slave
     SERCOM3->I2CS.CTRLA.reg = SERCOM_I2CS_CTRLA_MODE_I2C_SLAVE | // Режим I2C Slave
                                SERCOM_I2CS_CTRLA_ENABLE;         // Включаем модуль
-    SERCOM3->I2CS.ADDR.reg = (16 << 1); // Устанавливаем адрес Slave 16
+
+    // Устанавливаем адрес I2C Slave (16 в десятичной системе)
+    SERCOM3->I2CS.ADDR.reg = (16 << 1); // Установка адреса Slave
 }
 
-// Функция передачи данных из I2C в UART
-void i2c_to_uart(void) {
+// Проверка данных на I2C Slave и передача их на UART
+void test_i2c_slave(void) {
     while (1) {
-        // Проверка наличия данных от I2C Master
+        // Проверяем, есть ли данные от I2C Master
         if (SERCOM3->I2CS.INTFLAG.bit.DRDY) {
-            uint8_t data = SERCOM3->I2CS.DATA.reg; // Читаем данные
+            uint8_t data = SERCOM3->I2CS.DATA.reg; // Чтение данных от Master
 
-            // Ожидание готовности UART передатчика
+            // Передача данных на UART для проверки
             while (!(SERCOM5->USART.INTFLAG.reg & SERCOM_USART_INTFLAG_DRE));
-            SERCOM5->USART.DATA.reg = data; // Передаём данные на UART
+            SERCOM5->USART.DATA.reg = data;
         }
     }
 }
@@ -64,8 +66,7 @@ int main(void) {
     init_uart();     // Инициализация UART
     init_i2c_slave(); // Инициализация I2C Slave
 
-    // Основной цикл передачи данных
-    i2c_to_uart();
+    test_i2c_slave(); // Проверка данных на I2C
 
     while (1) {
         // Резервный цикл
