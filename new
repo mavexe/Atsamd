@@ -52,6 +52,8 @@ void configure_i2c_slave(void) {
 }
 
 void SERCOM3_Handler(void) {
+    SEGGER_RTT_WriteString(0, "Interrupt triggered\n");
+
     // Проверяем, установлен ли флаг "Данные готовы"
     if (SERCOM3->I2CS.INTFLAG.bit.DRDY) {
         SEGGER_RTT_WriteString(0, "Interrupt: Data Ready\n");
