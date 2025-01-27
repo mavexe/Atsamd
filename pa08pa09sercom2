@@ -7,55 +7,54 @@ volatile uint8_t i2c_received_data[16];
 volatile uint8_t i2c_index = 0;
 
 void configure_clocks(void) {
-    // Enable the APBC clock for SERCOM3
-    PM->APBCMASK.reg |= PM_APBCMASK_SERCOM3;
+    // Enable the APBC clock for SERCOM5
+    PM->APBCMASK.reg |= PM_APBCMASK_SERCOM5;
 
-    // Configure GCLK for SERCOM3
-    GCLK->CLKCTRL.reg = GCLK_CLKCTRL_ID(SERCOM3_GCLK_ID_CORE) |
+    // Configure GCLK for SERCOM5
+    GCLK->CLKCTRL.reg = GCLK_CLKCTRL_ID(SERCOM5_GCLK_ID_CORE) |
                         GCLK_CLKCTRL_GEN(0) |  // Use GCLK0
                         GCLK_CLKCTRL_CLKEN;
     while (GCLK->STATUS.bit.SYNCBUSY);
 }
 
 void configure_pins(void) {
-    // Configure PA16 (SDA) and PA17 (SCL) for SERCOM3
-    PORT->Group[0].PINCFG[16].reg = PORT_PINCFG_PMUXEN | PORT_PINCFG_INEN;
-    PORT->Group[0].PINCFG[17].reg = PORT_PINCFG_PMUXEN | PORT_PINCFG_INEN;
+    // Configure PA22 (SDA) and PA23 (SCL) for SERCOM5
+    PORT->Group[0].PINCFG[22].reg = PORT_PINCFG_PMUXEN | PORT_PINCFG_INEN;
+    PORT->Group[0].PINCFG[23].reg = PORT_PINCFG_PMUXEN | PORT_PINCFG_INEN;
 
-    PORT->Group[0].PMUX[16 >> 1].reg |= PORT_PMUX_PMUXE(0x2); // Function C for SDA
-    PORT->Group[0].PMUX[17 >> 1].reg |= PORT_PMUX_PMUXO(0x2); // Function C for SCL
+    PORT->Group[0].PMUX[22 >> 1].reg |= PORT_PMUX_PMUXE(0x2); // Function C for SDA
+    PORT->Group[0].PMUX[23 >> 1].reg |= PORT_PMUX_PMUXO(0x2); // Function C for SCL
 }
 
 void configure_i2c_slave(void) {
-    // Reset SERCOM3
-    SERCOM3->I2CS.CTRLA.reg = SERCOM_I2CS_CTRLA_SWRST;
-    while (SERCOM3->I2CS.CTRLA.bit.SWRST);
+    // Reset SERCOM5
+    SERCOM5->I2CS.CTRLA.reg = SERCOM_I2CS_CTRLA_SWRST;
+    while (SERCOM5->I2CS.CTRLA.bit.SWRST);
 
-    // Configure SERCOM3 as I2C Slave
-    SERCOM3->I2CS.CTRLA.reg = SERCOM_I2CS_CTRLA_MODE_I2C_SLAVE |
-                               SERCOM_I2CS_CTRLA_SCLSM;
+    // Configure SERCOM5 as I2C Slave
+    SERCOM5->I2CS.CTRLA.reg = SERCOM_I2CS_CTRLA_MODE_I2C_SLAVE;
 
     // Set slave address
-    SERCOM3->I2CS.ADDR.reg = SERCOM_I2CS_ADDR_ADDR(I2C_SLAVE_ADDRESS);
+    SERCOM5->I2CS.ADDR.reg = SERCOM_I2CS_ADDR_ADDR(I2C_SLAVE_ADDRESS);
 
-    // Enable the SERCOM3 I2C Slave
-    SERCOM3->I2CS.CTRLA.reg |= SERCOM_I2CS_CTRLA_ENABLE;
+    // Enable the SERCOM5 I2C Slave
+    SERCOM5->I2CS.CTRLA.reg |= SERCOM_I2CS_CTRLA_ENABLE;
 
     // Enable Data Ready interrupt
-    SERCOM3->I2CS.INTENSET.reg = SERCOM_I2CS_INTENSET_DRDY;
+    SERCOM5->I2CS.INTENSET.reg = SERCOM_I2CS_INTENSET_DRDY;
 
-    // Enable SERCOM3 interrupt in NVIC
-    NVIC_ClearPendingIRQ(SERCOM3_IRQn);
-    NVIC_SetPriority(SERCOM3_IRQn, 3);
-    NVIC_EnableIRQ(SERCOM3_IRQn);
+    // Enable SERCOM5 interrupt in NVIC
+    NVIC_ClearPendingIRQ(SERCOM5_IRQn);
+    NVIC_SetPriority(SERCOM5_IRQn, 3);
+    NVIC_EnableIRQ(SERCOM5_IRQn);
 
-    SEGGER_RTT_WriteString(0, "I2C Slave configured on SERCOM3\n");
+    SEGGER_RTT_WriteString(0, "I2C Slave configured on SERCOM5\n");
 }
 
-void SERCOM3_Handler(void) {
-    if (SERCOM3->I2CS.INTFLAG.bit.DRDY) {
+void SERCOM5_Handler(void) {
+    if (SERCOM5->I2CS.INTFLAG.bit.DRDY) {
         // Read the received data
-        uint8_t received_byte = SERCOM3->I2CS.DATA.reg;
+        uint8_t received_byte = SERCOM5->I2CS.DATA.reg;
 
         // Store it in the buffer
         i2c_received_data[i2c_index++] = received_byte;
