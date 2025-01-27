@@ -1,52 +1,49 @@
-include <samd20.h>
+#include <samd20.h>
 #include "SEGGER_RTT.h"
 
-#define I2C_SLAVE_ADDRESS 0x10 // I2C Slave Address
+#define I2C_SLAVE_ADDRESS 0x10 // I2C адрес устройства
 
 volatile uint8_t i2c_received_data[16];
 volatile uint8_t i2c_index = 0;
 
 void configure_clocks(void) {
-    // Enable the APBC clock for SERCOM5
+    // Включаем тактирование для SERCOM5
     PM->APBCMASK.reg |= PM_APBCMASK_SERCOM5;
 
-    // Configure GCLK for SERCOM5
+    // Настройка GCLK для SERCOM5
     GCLK->CLKCTRL.reg = GCLK_CLKCTRL_ID(SERCOM5_GCLK_ID_CORE) |
-                        GCLK_CLKCTRL_GEN(0) |  // Use GCLK0
+                        GCLK_CLKCTRL_GEN(0) |  // Используем GCLK0
                         GCLK_CLKCTRL_CLKEN;
     while (GCLK->STATUS.bit.SYNCBUSY);
 }
 
 void configure_pins(void) {
-    // Configure PA22 (SDA) and PA23 (SCL) for SERCOM5
+    // Настраиваем PA22 (SDA) и PA23 (SCL) для SERCOM5
     PORT->Group[0].PINCFG[22].reg = PORT_PINCFG_PMUXEN | PORT_PINCFG_INEN;
     PORT->Group[0].PINCFG[23].reg = PORT_PINCFG_PMUXEN | PORT_PINCFG_INEN;
 
-    PORT->Group[0].PMUX[22 >> 1].reg |= PORT_PMUX_PMUXE(0x2); // Function C for SDA
-    PORT->Group[0].PMUX[23 >> 1].reg |= PORT_PMUX_PMUXO(0x2); // Function C for SCL
+    PORT->Group[0].PMUX[22 >> 1].reg |= PORT_PMUX_PMUXE(0x2); // Функция C для SDA
+    PORT->Group[0].PMUX[23 >> 1].reg |= PORT_PMUX_PMUXO(0x2); // Функция C для SCL
 }
 
 void configure_i2c_slave(void) {
-    // Reset SERCOM5
+    // Сбрасываем SERCOM5
     SERCOM5->I2CS.CTRLA.reg = SERCOM_I2CS_CTRLA_SWRST;
     while (SERCOM5->I2CS.CTRLA.bit.SWRST);
 
-    // Configure SERCOM5 as I2C Slave
+    // Настраиваем SERCOM5 как I2C Slave
     SERCOM5->I2CS.CTRLA.reg = SERCOM_I2CS_CTRLA_MODE_I2C_SLAVE;
 
-    // Set slave address
+    // Задаем адрес слейва
     SERCOM5->I2CS.ADDR.reg = SERCOM_I2CS_ADDR_ADDR(I2C_SLAVE_ADDRESS);
 
-    // Configure for standard speed (100 kHz)
-    SERCOM5->I2CS.BAUD.reg = (1000000 / (2 * 100000)) - 1; // Internal clock 1 MHz, I2C speed 100 kHz
-
-    // Enable the SERCOM5 I2C Slave
+    // Включаем SERCOM5
     SERCOM5->I2CS.CTRLA.reg |= SERCOM_I2CS_CTRLA_ENABLE;
 
-    // Enable Data Ready interrupt
+    // Включаем прерывание "Данные готовы"
     SERCOM5->I2CS.INTENSET.reg = SERCOM_I2CS_INTENSET_DRDY;
 
-    // Enable SERCOM5 interrupt in NVIC
+    // Настройка NVIC для обработки прерываний от SERCOM5
     NVIC_ClearPendingIRQ(SERCOM5_IRQn);
     NVIC_SetPriority(SERCOM5_IRQn, 3);
     NVIC_EnableIRQ(SERCOM5_IRQn);
@@ -56,35 +53,35 @@ void configure_i2c_slave(void) {
 
 void SERCOM5_Handler(void) {
     if (SERCOM5->I2CS.INTFLAG.bit.DRDY) {
-        // Read the received data
+        // Читаем полученные данные
         uint8_t received_byte = SERCOM5->I2CS.DATA.reg;
 
-        // Store it in the buffer
+        // Сохраняем данные в буфер
         i2c_received_data[i2c_index++] = received_byte;
         if (i2c_index >= sizeof(i2c_received_data)) {
-            i2c_index = 0; // Wrap around if the buffer is full
+            i2c_index = 0; // Перезаписываем, если буфер заполнен
         }
 
-        // Output the received data to RTT Viewer
+        // Выводим данные в RTT Viewer
         SEGGER_RTT_printf(0, "Received: 0x%02X\n", received_byte);
     }
 }
 
 int main(void) {
-    // Initialize the system
+    // Инициализация системы
     SystemInit();
 
-    // Initialize RTT
+    // Инициализация RTT
     SEGGER_RTT_Init();
     SEGGER_RTT_WriteString(0, "I2C Slave Initialized\n");
 
-    // Configure clocks, pins, and I2C Slave
+    // Настройка тактирования, пинов и I2C Slave
     configure_clocks();
     configure_pins();
     configure_i2c_slave();
 
-    // Main loop
+    // Основной цикл
     while (1) {
-        __WFI(); // Wait for interrupt
+        __WFI(); // Ожидание прерывания
     }
 }
