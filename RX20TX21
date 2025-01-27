@@ -1,80 +1,23 @@
-// Инициализация UART (SERCOM5)
-void init_uart(void) {
-    PM->APBCMASK.reg |= PM_APBCMASK_SERCOM5;
-
-    GCLK->CLKCTRL.reg = GCLK_CLKCTRL_ID(SERCOM5_GCLK_ID_CORE) |
-                        GCLK_CLKCTRL_CLKEN |
-                        GCLK_CLKCTRL_GEN(0);
-
-    PORT->Group[0].PINCFG[20].reg = PORT_PINCFG_PMUXEN;
-    PORT->Group[0].PINCFG[21].reg = PORT_PINCFG_PMUXEN;
-    PORT->Group[0].PMUX[10].reg = PORT_PMUX_PMUXE(2) | PORT_PMUX_PMUXO(2);
-
-    SERCOM5->USART.CTRLA.reg = SERCOM_USART_CTRLA_MODE_USART_INT_CLK |
-                               SERCOM_USART_CTRLA_DORD |
-                               (0x3 << SERCOM_USART_CTRLA_RXPO_Pos) |
-                               (0x1 << SERCOM_USART_CTRLA_TXPO_Pos);
-
-    SERCOM5->USART.CTRLB.reg = SERCOM_USART_CTRLB_RXEN |
-                               SERCOM_USART_CTRLB_TXEN;
-
-    SERCOM5->USART.BAUD.reg = (1000000 / (16 * 19200)) - 1;
-
-    SERCOM5->USART.CTRLA.reg |= SERCOM_USART_CTRLA_ENABLE;
-}
-
-// Инициализация I2C Slave (SERCOM3)
-void init_i2c_slave(void) {
-    PM->APBCMASK.reg |= PM_APBCMASK_SERCOM3;
-
-    GCLK->CLKCTRL.reg = GCLK_CLKCTRL_ID(SERCOM3_GCLK_ID_CORE) |
-                        GCLK_CLKCTRL_CLKEN |
-                        GCLK_CLKCTRL_GEN(0);
-
-    PORT->Group[0].PINCFG[22].reg = PORT_PINCFG_PMUXEN;
-    PORT->Group[0].PINCFG[23].reg = PORT_PINCFG_PMUXEN;
-    PORT->Group[0].PMUX[11].reg = PORT_PMUX_PMUXE(2) | PORT_PMUX_PMUXO(2);
-
-    SERCOM3->I2CS.CTRLA.reg = SERCOM_I2CS_CTRLA_MODE_I2C_SLAVE |
-                               SERCOM_I2CS_CTRLA_SDAHOLD(0x2);
-
-    SERCOM3->I2CS.ADDR.reg = SERCOM_I2CS_ADDR_ADDR(16);
-
-    SERCOM3->I2CS.CTRLA.reg |= SERCOM_I2CS_CTRLA_ENABLE;
-    SERCOM3->I2CS.INTENSET.reg = SERCOM_I2CS_INTENSET_PREC |  // Stop condition
-                                  SERCOM_I2CS_INTENSET_AMATCH |  // Address match
-                                  SERCOM_I2CS_INTENSET_DRDY;    // Data ready
-}
-
-// Передача данных по UART
-void uart_send(uint8_t data) {
-    while (!(SERCOM5->USART.INTFLAG.reg & SERCOM_USART_INTFLAG_DRE));
-    SERCOM5->USART.DATA.reg = data;
-}
-
-// Основной обработчик I2C
-void handle_i2c(void) {
-    if (SERCOM3->I2CS.INTFLAG.reg & SERCOM_I2CS_INTFLAG_AMATCH) {
-        // Адресное совпадение, обновление состояния шины
-        SERCOM3->I2CS.STATUS.reg |= SERCOM_I2CS_STATUS_BUSSTATE(0x2); // Slave receives
-    }
-
-    if (SERCOM3->I2CS.INTFLAG.reg & SERCOM_I2CS_INTFLAG_DRDY) {
-        uint8_t received_data = SERCOM3->I2CS.DATA.reg;
-        uart_send(received_data);
-    }
-
-    if (SERCOM3->I2CS.INTFLAG.reg & SERCOM_I2CS_INTFLAG_PREC) {
-        SERCOM3->I2CS.INTFLAG.reg = SERCOM_I2CS_INTFLAG_PREC;
-    }
-}
+#include <samd20.h>
+#include "SEGGER_RTT.h"
 
 int main(void) {
+    // Инициализация системы
     SystemInit();
-    init_uart();
-    init_i2c_slave();
 
+    // Настройка минимальных размеров буфера RTT
+    SEGGER_RTT_ConfigUpBuffer(0, NULL, NULL, 64, SEGGER_RTT_MODE_NO_BLOCK_SKIP);
+    SEGGER_RTT_ConfigDownBuffer(0, NULL, NULL, 16, SEGGER_RTT_MODE_NO_BLOCK_SKIP);
+
+    // Инициализация RTT
+    SEGGER_RTT_Init();
+
+    // Отправка сообщения в RTT Viewer
+    SEGGER_RTT_WriteString(0, "Hello, J-Link RTT Viewer!\n");
+
+    // Главный цикл
     while (1) {
-        handle_i2c();
+        SEGGER_RTT_WriteString(0, "Still running...\n");
+        for (volatile int i = 0; i < 1000000; i++); // Задержка
     }
 }
