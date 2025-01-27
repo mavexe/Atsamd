@@ -69,11 +69,10 @@ void SERCOM3_Handler(void) {
             i2c_index = 0; // Перезаписываем при переполнении буфера
         }
 
-        // Отправка ACK или данных обратно, если необходимо
-        // Например, можно отправить байт, подтверждающий успешное получение
+        // Отправка данных или ACK
         if (i2c_index == 1) {
             SEGGER_RTT_WriteString(0, "Sending response data...\n");
-            SERCOM3->I2CS.DATA.reg = 0xAA; // Пример отправки байта 0xAA в ответ
+            SERCOM3->I2CS.DATA.reg = 0xAA; // Отправка данных (например, 0xAA)
         }
     }
 
