@@ -57,7 +57,7 @@ void configure_i2c_slave(void) {
 void SERCOM3_Handler(void) {
     SEGGER_RTT_WriteString(0, "Interrupt triggered\n");
 
-    // Проверяем флаг DRDY (данные готовы)
+    // Проверяем, есть ли готовые данные
     if (SERCOM3->I2CS.INTFLAG.bit.DRDY) {
         SEGGER_RTT_WriteString(0, "Data Ready\n");
 
@@ -81,11 +81,6 @@ void SERCOM3_Handler(void) {
     if (SERCOM3->I2CS.STATUS.bit.COLL) {
         SEGGER_RTT_WriteString(0, "Collision detected\n");
         SERCOM3->I2CS.STATUS.reg |= SERCOM_I2CS_STATUS_COLL; // Сброс флага ошибки
-    }
-
-    // Проверяем, не зависли ли линии SDA и SCL
-    if (SERCOM3->I2CS.STATUS.bit.SDAHOLD) {
-        SEGGER_RTT_WriteString(0, "SDA Hold detected\n");
     }
 }
 
