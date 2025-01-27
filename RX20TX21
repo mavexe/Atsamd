@@ -1,7 +1,7 @@
 #include <samd20.h>
 #include "SEGGER_RTT.h"
 
-#define I2C_SLAVE_ADDRESS 0x10  // I2C slave address (hexadecimal for 16)
+#define I2C_SLAVE_ADDRESS 0x10 // I2C Slave Address
 
 volatile uint8_t i2c_received_data[16];
 volatile uint8_t i2c_index = 0;
@@ -12,7 +12,7 @@ void configure_clocks(void) {
 
     // Configure GCLK for SERCOM5
     GCLK->CLKCTRL.reg = GCLK_CLKCTRL_ID(SERCOM5_GCLK_ID_CORE) |
-                        GCLK_CLKCTRL_GEN(0) |  // Use GCLK0
+                        GCLK_CLKCTRL_GEN(0) | // Use GCLK0
                         GCLK_CLKCTRL_CLKEN;
     while (GCLK->STATUS.bit.SYNCBUSY);
 }
@@ -32,8 +32,7 @@ void configure_i2c_slave(void) {
     while (SERCOM5->I2CS.CTRLA.bit.SWRST);
 
     // Configure SERCOM5 as I2C Slave
-    SERCOM5->I2CS.CTRLA.reg = SERCOM_I2CS_CTRLA_MODE_I2C_SLAVE |
-                               SERCOM_I2CS_CTRLA_SCLSM;
+    SERCOM5->I2CS.CTRLA.reg = SERCOM_I2CS_CTRLA_MODE_I2C_SLAVE;
 
     // Set slave address
     SERCOM5->I2CS.ADDR.reg = SERCOM_I2CS_ADDR_ADDR(I2C_SLAVE_ADDRESS);
@@ -52,7 +51,7 @@ void SERCOM5_Handler(void) {
     if (SERCOM5->I2CS.INTFLAG.bit.DRDY) {
         // Read the received data
         uint8_t received_byte = SERCOM5->I2CS.DATA.reg;
-        
+
         // Store it in the buffer
         i2c_received_data[i2c_index++] = received_byte;
         if (i2c_index >= sizeof(i2c_received_data)) {
