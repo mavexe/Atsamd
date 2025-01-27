@@ -1,7 +1,7 @@
 #include <samd20.h>
 #include "SEGGER_RTT.h"
 
-#define I2C_SLAVE_ADDRESS 0x10 // I2C Slave Address
+#define I2C_SLAVE_ADDRESS 0x10 // Адрес I2C Slave
 
 volatile uint8_t i2c_received_data[16];
 volatile uint8_t i2c_index = 0;
@@ -12,18 +12,19 @@ void configure_clocks(void) {
 
     // Настройка GCLK для SERCOM3
     GCLK->CLKCTRL.reg = GCLK_CLKCTRL_ID(SERCOM3_GCLK_ID_CORE) |
-                        GCLK_CLKCTRL_GEN(0) |  // Используем GCLK0
+                        GCLK_CLKCTRL_GEN(0) | // Используем GCLK0
                         GCLK_CLKCTRL_CLKEN;
     while (GCLK->STATUS.bit.SYNCBUSY);
 }
 
 void configure_pins(void) {
     // Настраиваем PA22 (SDA) и PA23 (SCL) для SERCOM3
-    PORT->Group[0].PINCFG[22].reg = PORT_PINCFG_PMUXEN | PORT_PINCFG_INEN;
-    PORT->Group[0].PINCFG[23].reg = PORT_PINCFG_PMUXEN | PORT_PINCFG_INEN;
+    PORT->Group[0].PINCFG[22].reg = PORT_PINCFG_PMUXEN | PORT_PINCFG_INEN; // SDA
+    PORT->Group[0].PINCFG[23].reg = PORT_PINCFG_PMUXEN | PORT_PINCFG_INEN; // SCL
 
-    PORT->Group[0].PMUX[22 >> 1].reg |= PORT_PMUX_PMUXE(0x2); // Функция C для SDA
-    PORT->Group[0].PMUX[23 >> 1].reg |= PORT_PMUX_PMUXO(0x2); // Функция C для SCL
+    // Установка функции C (SERCOM) для пинов
+    PORT->Group[0].PMUX[22 >> 1].reg |= PORT_PMUX_PMUXE(0x2); // PA22 (SDA)
+    PORT->Group[0].PMUX[23 >> 1].reg |= PORT_PMUX_PMUXO(0x2); // PA23 (SCL)
 }
 
 void configure_i2c_slave(void) {
@@ -37,10 +38,10 @@ void configure_i2c_slave(void) {
     // Задаем адрес слейва
     SERCOM3->I2CS.ADDR.reg = SERCOM_I2CS_ADDR_ADDR(I2C_SLAVE_ADDRESS);
 
-    // Включаем SERCOM3
+    // Включаем модуль SERCOM3
     SERCOM3->I2CS.CTRLA.reg |= SERCOM_I2CS_CTRLA_ENABLE;
 
-    // Включаем прерывание "Данные готовы"
+    // Включаем прерывания: данные готовы
     SERCOM3->I2CS.INTENSET.reg = SERCOM_I2CS_INTENSET_DRDY;
 
     // Настройка NVIC для обработки прерываний от SERCOM3
@@ -54,23 +55,22 @@ void configure_i2c_slave(void) {
 void SERCOM3_Handler(void) {
     SEGGER_RTT_WriteString(0, "Interrupt triggered\n");
 
-    // Проверяем, установлен ли флаг "Данные готовы"
     if (SERCOM3->I2CS.INTFLAG.bit.DRDY) {
-        SEGGER_RTT_WriteString(0, "Interrupt: Data Ready\n");
+        SEGGER_RTT_WriteString(0, "Data Ready\n");
 
-        // Читаем полученные данные
+        // Чтение байта из I2C
         uint8_t received_byte = SERCOM3->I2CS.DATA.reg;
 
-        // Сохраняем данные в буфер
+        // Сохранение в буфер
         i2c_received_data[i2c_index++] = received_byte;
         if (i2c_index >= sizeof(i2c_received_data)) {
-            i2c_index = 0; // Перезаписываем, если буфер заполнен
+            i2c_index = 0; // Перезапись при переполнении
         }
 
-        // Выводим данные в RTT Viewer
+        // Отладочный вывод в RTT Viewer
         SEGGER_RTT_printf(0, "Received: 0x%02X\n", received_byte);
     } else {
-        SEGGER_RTT_WriteString(0, "Interrupt: No Data Ready\n");
+        SEGGER_RTT_WriteString(0, "No Data Ready\n");
     }
 }
 
@@ -89,6 +89,6 @@ int main(void) {
 
     // Основной цикл
     while (1) {
-        __WFI(); // Ожидание прерывания
+        __WFI(); // Ждем прерываний
     }
 }
