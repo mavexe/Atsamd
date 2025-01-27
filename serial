@@ -1,0 +1,77 @@
+#include <asf.h>
+#include "SEGGER_RTT.h"
+
+#define I2C_SLAVE_ADDRESS 0x10 // I2C Slave Address
+
+volatile uint8_t i2c_received_data[16]; // Буфер для полученных данных
+volatile uint8_t i2c_index = 0;         // Текущий индекс буфера
+
+void configure_clocks(void) {
+    // Включаем тактирование для SERCOM
+    system_clock_source_enable(SYSTEM_CLOCK_SOURCE_XOSC32K);
+
+    // Включаем тактирование для SERCOM3
+    sysclk_enable_peripheral_clock(SERCOM3);
+}
+
+void configure_pins(void) {
+    // Настроим PA22 (SDA) и PA23 (SCL) для SERCOM3
+    // Устанавливаем пины для использования функции C (SERCOM3)
+    port_pin_set_function(PIN_PA22, PORT_PIN_FUNCTION_C);
+    port_pin_set_function(PIN_PA23, PORT_PIN_FUNCTION_C);
+}
+
+void configure_i2c_slave(void) {
+    // Конфигурируем SERCOM3 как I2C Slave
+    struct i2c_slave_config config_i2c_slave;
+    i2c_slave_get_config_defaults(&config_i2c_slave);
+    
+    config_i2c_slave.address = I2C_SLAVE_ADDRESS;
+    
+    // Инициализация I2C Slave
+    i2c_slave_init(&I2C_0, &config_i2c_slave);
+    
+    // Включаем прерывания на получение данных
+    i2c_slave_enable(&I2C_0);
+
+    // Настройка прерывания на получение данных
+    NVIC_EnableIRQ(SERCOM3_IRQn);
+
+    SEGGER_RTT_WriteString(0, "I2C Slave configured on SERCOM3\n");
+}
+
+void SERCOM3_Handler(void) {
+    // Проверяем флаг прерывания на данные
+    if (i2c_slave_is_data_ready(&I2C_0)) {
+        // Получаем данные
+        uint8_t received_byte = i2c_slave_read_byte(&I2C_0);
+        SEGGER_RTT_printf(0, "Received: 0x%02X\n", received_byte);
+
+        // Сохраняем данные в буфер
+        i2c_received_data[i2c_index++] = received_byte;
+        if (i2c_index >= sizeof(i2c_received_data)) {
+            i2c_index = 0; // Перезаписываем при переполнении буфера
+        }
+
+        // Отправляем данные обратно или ACK
+        SEGGER_RTT_WriteString(0, "Sending response data...\n");
+        i2c_slave_write_byte(&I2C_0, 0xAA); // Пример отправки байта 0xAA в ответ
+    }
+}
+
+int main(void) {
+    // Инициализация системы
+    system_init();
+    SEGGER_RTT_Init();
+    SEGGER_RTT_WriteString(0, "I2C Slave Initialized\n");
+
+    // Настройка тактирования, пинов и I2C Slave
+    configure_clocks();
+    configure_pins();
+    configure_i2c_slave();
+
+    // Основной цикл
+    while (1) {
+        __WFI(); // Ожидаем прерываний
+    }
+}
