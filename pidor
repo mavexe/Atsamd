@@ -1,0 +1,50 @@
+#include <samd20.h>
+
+// Уменьшенный буфер для RTT
+#define BUFFER_SIZE 16
+volatile uint8_t i2c_received_data[BUFFER_SIZE];
+volatile uint8_t data_index = 0;
+
+void configure_clocks(void) {
+    PM->APBCMASK.reg |= PM_APBCMASK_SERCOM3;
+    GCLK->CLKCTRL.reg = GCLK_CLKCTRL_ID(SERCOM3_GCLK_ID_CORE) | 
+                        GCLK_CLKCTRL_GEN(0) | 
+                        GCLK_CLKCTRL_CLKEN;
+    while (GCLK->STATUS.bit.SYNCBUSY);
+}
+
+void configure_pins(void) {
+    PORT->Group[0].PINCFG[22].reg = PORT_PINCFG_PMUXEN | PORT_PINCFG_INEN;
+    PORT->Group[0].PINCFG[23].reg = PORT_PINCFG_PMUXEN | PORT_PINCFG_INEN;
+    PORT->Group[0].PMUX[22 >> 1].reg |= PORT_PMUX_PMUXE(0x2);
+    PORT->Group[0].PMUX[23 >> 1].reg |= PORT_PMUX_PMUXO(0x2);
+}
+
+void configure_i2c_slave(void) {
+    SERCOM3->I2CS.CTRLA.reg = SERCOM_I2CS_CTRLA_SWRST;
+    while (SERCOM3->I2CS.CTRLA.bit.SWRST);
+    SERCOM3->I2CS.CTRLA.reg = SERCOM_I2CS_CTRLA_MODE_I2C_SLAVE;
+    SERCOM3->I2CS.ADDR.reg = SERCOM_I2CS_ADDR_ADDR(16);
+    SERCOM3->I2CS.CTRLA.reg |= SERCOM_I2CS_CTRLA_ENABLE;
+    SERCOM3->I2CS.INTENSET.reg = SERCOM_I2CS_INTENSET_DRDY;
+    NVIC_EnableIRQ(SERCOM3_IRQn);
+}
+
+void SERCOM3_Handler(void) {
+    if (SERCOM3->I2CS.INTFLAG.bit.DRDY) {
+        uint8_t received_byte = SERCOM3->I2CS.DATA.reg;
+        i2c_received_data[data_index++] = received_byte;
+        if (data_index >= BUFFER_SIZE) data_index = 0;
+    }
+}
+
+int main(void) {
+    SystemInit();
+    configure_clocks();
+    configure_pins();
+    configure_i2c_slave();
+
+    while (1) {
+        // Main loop
+    }
+}
