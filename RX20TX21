@@ -7,60 +7,65 @@ volatile uint8_t i2c_received_data[16]; // Буфер для полученны�
 volatile uint8_t i2c_index = 0;         // Текущий индекс буфера
 
 void configure_clocks(void) {
-    // Включаем тактирование для SERCOM5
-    PM->APBCMASK.reg |= PM_APBCMASK_SERCOM5;
+    // Включаем тактирование для SERCOM3
+    PM->APBCMASK.reg |= PM_APBCMASK_SERCOM3;
 
-    // Настройка GCLK для SERCOM5
-    GCLK->CLKCTRL.reg = GCLK_CLKCTRL_ID(SERCOM5_GCLK_ID_CORE) |
+    // Настройка GCLK для SERCOM3
+    GCLK->CLKCTRL.reg = GCLK_CLKCTRL_ID(SERCOM3_GCLK_ID_CORE) |
                         GCLK_CLKCTRL_GEN(0) |  // Используем GCLK0
                         GCLK_CLKCTRL_CLKEN;
     while (GCLK->STATUS.bit.SYNCBUSY); // Ждем синхронизации
 }
 
 void configure_pins(void) {
-    // Настроим PA22 (SDA) и PA23 (SCL) для SERCOM5
+    // Настроим PA22 (SDA) и PA23 (SCL) для SERCOM3
     PORT->Group[0].PINCFG[22].reg = PORT_PINCFG_PMUXEN | PORT_PINCFG_INEN; // SDA
     PORT->Group[0].PINCFG[23].reg = PORT_PINCFG_PMUXEN | PORT_PINCFG_INEN; // SCL
 
-    // Устанавливаем альтернативную функцию D для SERCOM5
-    PORT->Group[0].PMUX[22 >> 1].reg |= PORT_PMUX_PMUXE(0x3); // PA22 (SDA), Function D
-    PORT->Group[0].PMUX[23 >> 1].reg |= PORT_PMUX_PMUXO(0x3); // PA23 (SCL), Function D
+    // Устанавливаем функцию C (SERCOM) для пинов PA22 и PA23
+    PORT->Group[0].PMUX[22 >> 1].reg |= PORT_PMUX_PMUXE(0x2); // PA22 (SDA), Function C
+    PORT->Group[0].PMUX[23 >> 1].reg |= PORT_PMUX_PMUXO(0x2); // PA23 (SCL), Function C
 }
 
 void configure_i2c_slave(void) {
-    // Сбрасываем SERCOM5
-    SERCOM5->I2CS.CTRLA.reg = SERCOM_I2CS_CTRLA_SWRST;
-    while (SERCOM5->I2CS.CTRLA.bit.SWRST);
+    // Сбрасываем SERCOM3
+    SERCOM3->I2CS.CTRLA.reg = SERCOM_I2CS_CTRLA_SWRST;
+    while (SERCOM3->I2CS.CTRLA.bit.SWRST);
 
-    // Настроим SERCOM5 как I2C Slave
-    SERCOM5->I2CS.CTRLA.reg = SERCOM_I2CS_CTRLA_MODE_I2C_SLAVE;
+    // Настроим SERCOM3 как I2C Slave
+    SERCOM3->I2CS.CTRLA.reg = SERCOM_I2CS_CTRLA_MODE_I2C_SLAVE;
 
     // Устанавливаем адрес слейва
-    SERCOM5->I2CS.ADDR.reg = SERCOM_I2CS_ADDR_ADDR(I2C_SLAVE_ADDRESS);
+    SERCOM3->I2CS.ADDR.reg = SERCOM_I2CS_ADDR_ADDR(I2C_SLAVE_ADDRESS);
 
-    // Включаем модуль SERCOM5
-    SERCOM5->I2CS.CTRLA.reg |= SERCOM_I2CS_CTRLA_ENABLE;
+    // Настройка скорости шины I2C (100 кГц)
+    // Формула: (F_CPU / (2 * speed)) - 1
+    // Для 100 кГц при 1 МГц внутренней частоте: (1000000 / (2 * 100000)) - 1 = 4
+    SERCOM3->I2CS.BAUD.reg = (1000000 / (2 * 100000)) - 1;
+
+    // Включаем модуль SERCOM3
+    SERCOM3->I2CS.CTRLA.reg |= SERCOM_I2CS_CTRLA_ENABLE;
 
     // Включаем прерывания: данные готовы (DRDY)
-    SERCOM5->I2CS.INTENSET.reg = SERCOM_I2CS_INTENSET_DRDY;
+    SERCOM3->I2CS.INTENSET.reg = SERCOM_I2CS_INTENSET_DRDY;
 
-    // Настройка NVIC для обработки прерываний от SERCOM5
-    NVIC_ClearPendingIRQ(SERCOM5_IRQn);
-    NVIC_SetPriority(SERCOM5_IRQn, 3);
-    NVIC_EnableIRQ(SERCOM5_IRQn);
+    // Настройка NVIC для обработки прерываний от SERCOM3
+    NVIC_ClearPendingIRQ(SERCOM3_IRQn);
+    NVIC_SetPriority(SERCOM3_IRQn, 3);
+    NVIC_EnableIRQ(SERCOM3_IRQn);
 
-    SEGGER_RTT_WriteString(0, "I2C Slave configured on SERCOM5\n");
+    SEGGER_RTT_WriteString(0, "I2C Slave configured on SERCOM3\n");
 }
 
-void SERCOM5_Handler(void) {
+void SERCOM3_Handler(void) {
     SEGGER_RTT_WriteString(0, "Interrupt triggered\n");
 
     // Проверяем, есть ли готовые данные
-    if (SERCOM5->I2CS.INTFLAG.bit.DRDY) {
+    if (SERCOM3->I2CS.INTFLAG.bit.DRDY) {
         SEGGER_RTT_WriteString(0, "Data Ready\n");
 
         // Чтение данных
-        uint8_t received_byte = SERCOM5->I2CS.DATA.reg;
+        uint8_t received_byte = SERCOM3->I2CS.DATA.reg;
         SEGGER_RTT_printf(0, "Received: 0x%02X\n", received_byte);
 
         // Сохраняем данные в буфер
@@ -71,14 +76,14 @@ void SERCOM5_Handler(void) {
     }
 
     // Проверяем наличие ошибок на шине
-    if (SERCOM5->I2CS.STATUS.bit.BUSERR) {
+    if (SERCOM3->I2CS.STATUS.bit.BUSERR) {
         SEGGER_RTT_WriteString(0, "Bus error detected\n");
-        SERCOM5->I2CS.STATUS.reg |= SERCOM_I2CS_STATUS_BUSERR; // Сброс флага ошибки
+        SERCOM3->I2CS.STATUS.reg |= SERCOM_I2CS_STATUS_BUSERR; // Сброс флага ошибки
     }
 
-    if (SERCOM5->I2CS.STATUS.bit.COLL) {
+    if (SERCOM3->I2CS.STATUS.bit.COLL) {
         SEGGER_RTT_WriteString(0, "Collision detected\n");
-        SERCOM5->I2CS.STATUS.reg |= SERCOM_I2CS_STATUS_COLL; // Сброс флага ошибки
+        SERCOM3->I2CS.STATUS.reg |= SERCOM_I2CS_STATUS_COLL; // Сброс флага ошибки
     }
 }
 
