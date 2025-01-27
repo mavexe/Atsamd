@@ -1,87 +1,22 @@
-#include <samd20.h>
-#include "SEGGER_RTT.h"
+void SERCOM3_Handler(void) {
+    SEGGER_RTT_WriteString(0, "Interrupt triggered\n");
 
-#define I2C_SLAVE_ADDRESS 0x10 // I2C Slave Address
-
-volatile uint8_t i2c_received_data[16];
-volatile uint8_t i2c_index = 0;
-
-void configure_clocks(void) {
-    // Enable the APBC clock for SERCOM5
-    PM->APBCMASK.reg |= PM_APBCMASK_SERCOM5;
-
-    // Configure GCLK for SERCOM5
-    GCLK->CLKCTRL.reg = GCLK_CLKCTRL_ID(SERCOM5_GCLK_ID_CORE) |
-                        GCLK_CLKCTRL_GEN(0) |  // Use GCLK0
-                        GCLK_CLKCTRL_CLKEN;
-    while (GCLK->STATUS.bit.SYNCBUSY);
-}
-
-void configure_pins(void) {
-    // Configure PA22 (SDA) and PA23 (SCL) for SERCOM5
-    PORT->Group[0].PINCFG[22].reg = PORT_PINCFG_PMUXEN | PORT_PINCFG_INEN;
-    PORT->Group[0].PINCFG[23].reg = PORT_PINCFG_PMUXEN | PORT_PINCFG_INEN;
-
-    PORT->Group[0].PMUX[22 >> 1].reg |= PORT_PMUX_PMUXE(0x2); // Function C for SDA
-    PORT->Group[0].PMUX[23 >> 1].reg |= PORT_PMUX_PMUXO(0x2); // Function C for SCL
-}
-
-void configure_i2c_slave(void) {
-    // Reset SERCOM5
-    SERCOM5->I2CS.CTRLA.reg = SERCOM_I2CS_CTRLA_SWRST;
-    while (SERCOM5->I2CS.CTRLA.bit.SWRST);
-
-    // Configure SERCOM5 as I2C Slave
-    SERCOM5->I2CS.CTRLA.reg = SERCOM_I2CS_CTRLA_MODE_I2C_SLAVE;
-
-    // Set slave address
-    SERCOM5->I2CS.ADDR.reg = SERCOM_I2CS_ADDR_ADDR(I2C_SLAVE_ADDRESS);
-
-    // Enable the SERCOM5 I2C Slave
-    SERCOM5->I2CS.CTRLA.reg |= SERCOM_I2CS_CTRLA_ENABLE;
-
-    // Enable Data Ready interrupt
-    SERCOM5->I2CS.INTENSET.reg = SERCOM_I2CS_INTENSET_DRDY;
-
-    // Enable SERCOM5 interrupt in NVIC
-    NVIC_ClearPendingIRQ(SERCOM5_IRQn);
-    NVIC_SetPriority(SERCOM5_IRQn, 3);
-    NVIC_EnableIRQ(SERCOM5_IRQn);
-
-    SEGGER_RTT_WriteString(0, "I2C Slave configured on SERCOM5\n");
-}
-
-void SERCOM5_Handler(void) {
-    if (SERCOM5->I2CS.INTFLAG.bit.DRDY) {
-        // Read the received data
-        uint8_t received_byte = SERCOM5->I2CS.DATA.reg;
-
-        // Store it in the buffer
-        i2c_received_data[i2c_index++] = received_byte;
-        if (i2c_index >= sizeof(i2c_received_data)) {
-            i2c_index = 0; // Wrap around if the buffer is full
-        }
-
-        // Output the received data to RTT Viewer
+    if (SERCOM3->I2CS.INTFLAG.bit.DRDY) {
+        uint8_t received_byte = SERCOM3->I2CS.DATA.reg;
         SEGGER_RTT_printf(0, "Received: 0x%02X\n", received_byte);
     }
-}
 
-int main(void) {
-    // Initialize the system
-    SystemInit();
+    if (SERCOM3->I2CS.STATUS.bit.AMATCH) {
+        SEGGER_RTT_WriteString(0, "Address matched\n");
+    }
 
-    // Initialize RTT
-    SEGGER_RTT_Init();
-    SEGGER_RTT_WriteString(0, "I2C Slave Initialized\n");
+    if (SERCOM3->I2CS.STATUS.bit.BUSERR) {
+        SEGGER_RTT_WriteString(0, "Bus error detected\n");
+        SERCOM3->I2CS.STATUS.reg |= SERCOM_I2CS_STATUS_BUSERR; // Сброс ошибки
+    }
 
-    // Configure clocks, pins, and I2C Slave
-    configure_clocks();
-    configure_pins();
-    configure_i2c_slave();
-
-    // Main loop
-    while (1) {
-        __WFI(); // Wait for interrupt
+    if (SERCOM3->I2CS.STATUS.bit.COLL) {
+        SEGGER_RTT_WriteString(0, "Collision detected\n");
+        SERCOM3->I2CS.STATUS.reg |= SERCOM_I2CS_STATUS_COLL; // Сброс ошибки
     }
 }
