@@ -18,11 +18,11 @@ void configure_clocks(void) {
 }
 
 void configure_pins(void) {
-    // Настроим PA22 (SDA) и PA23 (SCL) для SERCOM5
+    // Настраиваем PA22 (SDA) и PA23 (SCL) для SERCOM5
     PORT->Group[0].PINCFG[22].reg = PORT_PINCFG_PMUXEN | PORT_PINCFG_INEN; // SDA
     PORT->Group[0].PINCFG[23].reg = PORT_PINCFG_PMUXEN | PORT_PINCFG_INEN; // SCL
 
-    // Установим альтернативную функцию D для SERCOM5
+    // Устанавливаем альтернативную функцию D для SERCOM5
     PORT->Group[0].PMUX[22 >> 1].reg |= PORT_PMUX_PMUXE(0x3); // PA22 (SDA), Function D
     PORT->Group[0].PMUX[23 >> 1].reg |= PORT_PMUX_PMUXO(0x3); // PA23 (SCL), Function D
 }
@@ -32,9 +32,8 @@ void configure_i2c_slave(void) {
     SERCOM5->I2CS.CTRLA.reg = SERCOM_I2CS_CTRLA_SWRST;
     while (SERCOM5->I2CS.CTRLA.bit.SWRST);
 
-    // Настроим SERCOM5 как I2C Slave
-    SERCOM5->I2CS.CTRLA.reg = SERCOM_I2CS_CTRLA_MODE_I2C_SLAVE |
-                               SERCOM_I2CS_CTRLA_SCLSM; // Включаем Clock Stretching
+    // Настраиваем SERCOM5 как I2C Slave
+    SERCOM5->I2CS.CTRLA.reg = SERCOM_I2CS_CTRLA_MODE_I2C_SLAVE;
 
     // Устанавливаем адрес слейва
     SERCOM5->I2CS.ADDR.reg = SERCOM_I2CS_ADDR_ADDR(I2C_SLAVE_ADDRESS);
