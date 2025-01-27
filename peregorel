@@ -1,0 +1,89 @@
+#include <samd20.h>
+#include "SEGGER_RTT.h"
+
+#define SLAVE_ADDRESS 16 // I2C slave address
+#define I2C_BAUD_RATE 19200 // Not used in slave mode but for completeness
+
+// Buffer for received data
+#define BUFFER_SIZE 256
+volatile uint8_t i2c_received_data[BUFFER_SIZE];
+volatile uint8_t data_index = 0;
+
+void configure_clocks(void) {
+    // Enable GCLK for SERCOM3
+    PM->APBCMASK.reg |= PM_APBCMASK_SERCOM3;
+    GCLK->CLKCTRL.reg = GCLK_CLKCTRL_ID(SERCOM3_GCLK_ID_CORE) | 
+                        GCLK_CLKCTRL_GEN(0) | 
+                        GCLK_CLKCTRL_CLKEN;
+    while (GCLK->STATUS.bit.SYNCBUSY);
+}
+
+void configure_pins(void) {
+    // Configure PA22 (SDA) and PA23 (SCL) for SERCOM3
+    PORT->Group[0].PINCFG[22].reg = PORT_PINCFG_PMUXEN | PORT_PINCFG_INEN;
+    PORT->Group[0].PINCFG[23].reg = PORT_PINCFG_PMUXEN | PORT_PINCFG_INEN;
+    PORT->Group[0].PMUX[22 >> 1].reg |= PORT_PMUX_PMUXE(0x2); // SERCOM3 PAD[0]
+    PORT->Group[0].PMUX[23 >> 1].reg |= PORT_PMUX_PMUXO(0x2); // SERCOM3 PAD[1]
+}
+
+void configure_i2c_slave(void) {
+    // Reset SERCOM3
+    SERCOM3->I2CS.CTRLA.reg = SERCOM_I2CS_CTRLA_SWRST;
+    while (SERCOM3->I2CS.CTRLA.bit.SWRST);
+
+    // Configure SERCOM3 for I2C slave mode
+    SERCOM3->I2CS.CTRLA.reg = SERCOM_I2CS_CTRLA_MODE_I2C_SLAVE |
+                               SERCOM_I2CS_CTRLA_SCLSM;
+
+    // Set the slave address
+    SERCOM3->I2CS.ADDR.reg = SERCOM_I2CS_ADDR_ADDR(SLAVE_ADDRESS);
+
+    // Enable the SERCOM3 I2C Slave
+    SERCOM3->I2CS.CTRLA.reg |= SERCOM_I2CS_CTRLA_ENABLE;
+
+    // Enable data ready interrupt
+    SERCOM3->I2CS.INTENSET.reg = SERCOM_I2CS_INTENSET_DRDY;
+    NVIC_EnableIRQ(SERCOM3_IRQn);
+}
+
+void SERCOM3_Handler(void) {
+    if (SERCOM3->I2CS.INTFLAG.bit.DRDY) {
+        // Read the received data
+        uint8_t received_byte = SERCOM3->I2CS.DATA.reg;
+
+        // Store the received byte in the buffer
+        i2c_received_data[data_index++] = received_byte;
+
+        // Wrap around if buffer is full
+        if (data_index >= BUFFER_SIZE) {
+            data_index = 0;
+        }
+
+        // Print received byte to RTT Viewer
+        SEGGER_RTT_printf(0, "Received: 0x%02X\n", received_byte);
+
+        // Clear the interrupt flag
+        SERCOM3->I2CS.INTFLAG.reg = SERCOM_I2CS_INTFLAG_DRDY;
+    }
+}
+
+int main(void) {
+    // Initialize the system
+    SystemInit();
+
+    // Initialize RTT
+    SEGGER_RTT_Init();
+    SEGGER_RTT_WriteString(0, "I2C Slave Initialized\n");
+
+    // Configure clocks and pins
+    configure_clocks();
+    configure_pins();
+
+    // Configure I2C slave
+    configure_i2c_slave();
+
+    // Main loop
+    while (1) {
+        // Idle loop
+    }
+}
