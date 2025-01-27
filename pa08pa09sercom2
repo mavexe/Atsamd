@@ -3,8 +3,8 @@
 
 #define I2C_SLAVE_ADDRESS 0x10 // I2C Slave Address
 
-volatile uint8_t i2c_received_data[16];
-volatile uint8_t i2c_index = 0;
+volatile uint8_t i2c_received_data[16]; // Буфер для полученных данных
+volatile uint8_t i2c_index = 0;         // Текущий индекс буфера
 
 void configure_clocks(void) {
     // Включаем тактирование для SERCOM3
@@ -57,15 +57,7 @@ void configure_i2c_slave(void) {
 void SERCOM3_Handler(void) {
     SEGGER_RTT_WriteString(0, "Interrupt triggered\n");
 
-    // Проверяем флаг ADDR (совпадение адреса)
-    if (SERCOM3->I2CS.INTFLAG.bit.ADDR) {
-        SEGGER_RTT_WriteString(0, "Address matched\n");
-
-        // Очищаем флаг ADDR
-        SERCOM3->I2CS.INTFLAG.reg = SERCOM_I2CS_INTFLAG_ADDR;
-    }
-
-    // Проверяем, есть ли готовые данные
+    // Проверяем флаг DRDY (данные готовы)
     if (SERCOM3->I2CS.INTFLAG.bit.DRDY) {
         SEGGER_RTT_WriteString(0, "Data Ready\n");
 
@@ -89,6 +81,11 @@ void SERCOM3_Handler(void) {
     if (SERCOM3->I2CS.STATUS.bit.COLL) {
         SEGGER_RTT_WriteString(0, "Collision detected\n");
         SERCOM3->I2CS.STATUS.reg |= SERCOM_I2CS_STATUS_COLL; // Сброс флага ошибки
+    }
+
+    // Проверяем, не зависли ли линии SDA и SCL
+    if (SERCOM3->I2CS.STATUS.bit.SDAHOLD) {
+        SEGGER_RTT_WriteString(0, "SDA Hold detected\n");
     }
 }
 
