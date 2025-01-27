@@ -69,11 +69,11 @@ void SERCOM3_Handler(void) {
             i2c_index = 0; // Перезаписываем при переполнении буфера
         }
 
-        // Ответ на запрос мастера: отправляем данные
-        if (i2c_index == 1) {
-            // Отправка одного байта в ответ на запрос
-            SEGGER_RTT_WriteString(0, "Sending response data...\n");
-            SERCOM3->I2CS.DATA.reg = 0xAA; // Отправляем байт 0xAA (например, в ответ на запрос)
+        // Отправляем ACK (если это необходимо)
+        if (SERCOM3->I2CS.STATUS.bit.BUSY == 0) {
+            // Если шина не занята, отправляем ACK
+            SEGGER_RTT_WriteString(0, "Sending ACK\n");
+            SERCOM3->I2CS.DATA.reg = 0x00; // Отправляем ACK
         }
     }
 
