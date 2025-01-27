@@ -5,6 +5,7 @@
 
 volatile uint8_t i2c_received_data[16];
 volatile uint8_t i2c_index = 0;
+volatile uint32_t no_data_counter = 0;
 
 void configure_clocks(void) {
     // Enable the APBC clock for SERCOM5
@@ -49,6 +50,9 @@ void configure_i2c_slave(void) {
 
 void SERCOM5_Handler(void) {
     if (SERCOM5->I2CS.INTFLAG.bit.DRDY) {
+        // Reset no-data counter
+        no_data_counter = 0;
+
         // Read the received data
         uint8_t received_byte = SERCOM5->I2CS.DATA.reg;
 
@@ -60,6 +64,14 @@ void SERCOM5_Handler(void) {
 
         // Output the received data to RTT Viewer
         SEGGER_RTT_printf(0, "Received: 0x%02X\n", received_byte);
+    }
+}
+
+void check_no_data(void) {
+    no_data_counter++;
+    if (no_data_counter > 1000000) { // Arbitrary timeout threshold
+        SEGGER_RTT_WriteString(0, "No data received on I2C bus.\n");
+        no_data_counter = 0; // Reset counter to avoid repeated messages
     }
 }
 
@@ -79,5 +91,6 @@ int main(void) {
     // Main loop
     while (1) {
         __WFI(); // Wait for interrupt
+        check_no_data(); // Periodically check if no data has been received
     }
 }
