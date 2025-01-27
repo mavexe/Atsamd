@@ -18,7 +18,7 @@ void configure_clocks(void) {
 }
 
 void configure_pins(void) {
-    // Настраиваем PA22 (SDA) и PA23 (SCL) для SERCOM5
+    // Настроим PA22 (SDA) и PA23 (SCL) для SERCOM5
     PORT->Group[0].PINCFG[22].reg = PORT_PINCFG_PMUXEN | PORT_PINCFG_INEN; // SDA
     PORT->Group[0].PINCFG[23].reg = PORT_PINCFG_PMUXEN | PORT_PINCFG_INEN; // SCL
 
@@ -32,7 +32,7 @@ void configure_i2c_slave(void) {
     SERCOM5->I2CS.CTRLA.reg = SERCOM_I2CS_CTRLA_SWRST;
     while (SERCOM5->I2CS.CTRLA.bit.SWRST);
 
-    // Настраиваем SERCOM5 как I2C Slave
+    // Настроим SERCOM5 как I2C Slave
     SERCOM5->I2CS.CTRLA.reg = SERCOM_I2CS_CTRLA_MODE_I2C_SLAVE;
 
     // Устанавливаем адрес слейва
@@ -52,7 +52,6 @@ void configure_i2c_slave(void) {
     SEGGER_RTT_WriteString(0, "I2C Slave configured on SERCOM5\n");
 }
 
-// Обработчик прерываний для SERCOM5
 void SERCOM5_Handler(void) {
     SEGGER_RTT_WriteString(0, "Interrupt triggered\n");
 
