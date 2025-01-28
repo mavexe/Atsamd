@@ -8,7 +8,6 @@ uint8_t rx_len = 0;
 
 // Флаги для управления переключением
 volatile bool data_received = false;
-volatile bool uart_ready = true;
 
 // Инициализация I2C Slave
 void init_i2c(void) {
@@ -26,14 +25,15 @@ void init_i2c(void) {
     PORT->Group[0].PMUX[11].reg = PORT_PMUX_PMUXE(2) | PORT_PMUX_PMUXO(2); // SERCOM5: PA22 (PAD[0]), PA23 (PAD[1])
 
     // Конфигурация SERCOM5 для I2C Slave
-    SERCOM5->I2CM.CTRLA.reg = SERCOM_I2CM_CTRLA_MODE_I2C_SLAVE | // Режим I2C Slave
-                              SERCOM_I2CM_CTRLA_ENABLE;          // Включение I2C
+    SERCOM5->I2CS.CTRLA.reg = SERCOM_I2CS_CTRLA_MODE_I2C_SLAVE | // Режим I2C Slave
+                              SERCOM_I2CS_CTRLA_ENABLE;          // Включение I2C
 
-    SERCOM5->I2CM.ADDR.reg = SERCOM_I2CM_ADDR_ADDR(0x9) | // Адрес I2C Slave
-                             SERCOM_I2CM_ADDR_ADDREN;     // Включение адреса
+    // Установка адреса I2C Slave
+    SERCOM5->I2CS.ADDR.reg = SERCOM_I2CS_ADDR_ADDR(0x9); // Адрес I2C Slave (0x9)
 
-    // Включение прерываний для I2C
-    SERCOM5->I2CM.INTENSET.reg = SERCOM_I2CM_INTENSET_SB; // Прерывание по приему данных
+    // Включение прерываний для I2C Slave
+    SERCOM5->I2CS.INTENSET.reg = SERCOM_I2CS_INTENSET_AMATCH | // Прерывание по совпадению адреса
+                                 SERCOM_I2CS_INTENSET_DRDY;    // Прерывание по готовности данных
     NVIC_EnableIRQ(SERCOM5_IRQn); // Включение прерывания SERCOM5
 }
 
@@ -68,18 +68,24 @@ void switch_to_i2c(void) {
 
 // Переключение SERCOM5 в режим UART
 void switch_to_uart(void) {
-    SERCOM5->I2CM.CTRLA.reg &= ~SERCOM_I2CM_CTRLA_ENABLE; // Отключение I2C
+    SERCOM5->I2CS.CTRLA.reg &= ~SERCOM_I2CS_CTRLA_ENABLE; // Отключение I2C
     init_uart(); // Переконфигурация в режим UART
 }
 
-// Обработчик прерывания SERCOM5 (I2C)
+// Обработчик прерывания SERCOM5 (I2C Slave)
 void SERCOM5_Handler(void) {
-    if (SERCOM5->I2CM.INTFLAG.reg & SERCOM_I2CM_INTFLAG_SB) {
-        // Чтение данных из I2C
-        rx_len = 0;
-        while (SERCOM5->I2CM.INTFLAG.reg & SERCOM_I2CM_INTFLAG_SB) {
-            rx_buf[rx_len++] = SERCOM5->I2CM.DATA.reg;
-        }
+    if (SERCOM5->I2CS.INTFLAG.reg & SERCOM_I2CS_INTFLAG_AMATCH) {
+        // Совпадение адреса: устройство выбрано как Slave
+        rx_len = 0; // Сброс длины буфера
+    }
+
+    if (SERCOM5->I2CS.INTFLAG.reg & SERCOM_I2CS_INTFLAG_DRDY) {
+        // Данные готовы для чтения
+        rx_buf[rx_len++] = SERCOM5->I2CS.DATA.reg; // Чтение данных
+    }
+
+    if (SERCOM5->I2CS.INTFLAG.reg & SERCOM_I2CS_INTFLAG_PREC) {
+        // Прерывание по завершению передачи (Stop condition)
         data_received = true; // Установка флага получения данных
     }
 }
