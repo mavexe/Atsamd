@@ -1,10 +1,9 @@
 #include <asf.h>
 #include "SEGGER_RTT.h"
 
-#define I2C_SLAVE_ADDRESS 0x48 // Новый адрес I2C слейва (7-битный)
+#define I2C_SLAVE_ADDRESS 0x48 // I2C адрес слейва
 
-volatile uint8_t i2c_received_data[16];
-volatile uint8_t i2c_index = 0;
+volatile uint8_t received_data = 0;
 
 struct i2c_slave_module i2c_slave_instance;
 
@@ -12,38 +11,32 @@ void configure_i2c_slave(void) {
     struct i2c_slave_config config;
     i2c_slave_get_config_defaults(&config);
 
-    // Установка нового адреса слейва
-    config.address = I2C_SLAVE_ADDRESS;
-    config.address_mode = I2C_SLAVE_ADDRESS_MODE_MASK; // 7-битный адрес
+    config.address = I2C_SLAVE_ADDRESS; // Установка адреса
+    config.address_mode = I2C_SLAVE_ADDRESS_MODE_MASK; // 7-битный режим
 
-    // Инициализация I2C слейва
     i2c_slave_init(&i2c_slave_instance, SERCOM3, &config);
     i2c_slave_enable(&i2c_slave_instance);
 
-    SEGGER_RTT_WriteString(0, "I2C Slave configured with address 0x48 on SERCOM3\n");
+    SEGGER_RTT_WriteString(0, "I2C Slave configured\n");
 }
 
-// Callback для обработки событий I2C
 void i2c_slave_callback(struct i2c_slave_module *const module) {
     uint8_t received_byte = 0;
 
-    // Чтение данных от мастера
+    // Чтение одного байта
     if (i2c_slave_read_packet_wait(module, &received_byte) == STATUS_OK) {
         SEGGER_RTT_printf(0, "Received: 0x%02X\n", received_byte);
+        received_data = received_byte;
 
-        i2c_received_data[i2c_index++] = received_byte;
-        if (i2c_index >= sizeof(i2c_received_data)) {
-            i2c_index = 0; // Сбрасываем индекс при переполнении
-        }
-
-        // Отправка ответа мастеру
-        uint8_t response = 0xAA; // Пример ответа
+        // Отправка ответа
+        uint8_t response = 0xBB; // Пример ответа
         i2c_slave_write_packet_wait(module, &response);
+    } else {
+        SEGGER_RTT_WriteString(0, "Failed to receive data\n");
     }
 }
 
 void configure_i2c_callbacks(void) {
-    // Регистрируем callback для чтения данных
     i2c_slave_register_callback(&i2c_slave_instance, i2c_slave_callback, I2C_SLAVE_CALLBACK_READ_COMPLETE);
     i2c_slave_enable_callback(&i2c_slave_instance, I2C_SLAVE_CALLBACK_READ_COMPLETE);
 }
@@ -57,6 +50,6 @@ int main(void) {
     configure_i2c_callbacks();
 
     while (1) {
-        __WFI(); // Ожидание прерываний
+        __WFI(); // Ждём прерываний
     }
 }
