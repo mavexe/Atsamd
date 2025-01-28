@@ -1,0 +1,61 @@
+#include <asf.h>
+#include "SEGGER_RTT.h"
+
+#define SLAVE_ADDRESS 0x10
+
+struct i2c_slave_module i2c_slave_instance;
+uint8_t received_data[256]; // Буфер для данных, полученных по I2C
+uint8_t received_length = 0;
+
+// Callback для обработки данных, полученных от мастера
+void i2c_read_request_callback(struct i2c_slave_module *const module) {
+    enum status_code status;
+    uint8_t data;
+
+    // Читаем данные от мастера
+    status = i2c_slave_read_packet_wait(module, &data, 1);
+    if (status == STATUS_OK) {
+        received_data[received_length++] = data;
+        SEGGER_RTT_printf(0, "Received data: 0x%02X\n", data);
+    } else {
+        SEGGER_RTT_WriteString(0, "Error reading data\n");
+    }
+}
+
+void configure_i2c_slave(void) {
+    // Конфигурация структуры для I2C Slave
+    struct i2c_slave_config config_i2c_slave;
+    i2c_slave_get_config_defaults(&config_i2c_slave);
+
+    // Настройка пинов и серкома
+    config_i2c_slave.address       = SLAVE_ADDRESS;
+    config_i2c_slave.address_mode = I2C_SLAVE_ADDRESS_MODE_MASK;
+    config_i2c_slave.pinmux_pad0  = PINMUX_PA22C_SERCOM3_PAD0; // SDA
+    config_i2c_slave.pinmux_pad1  = PINMUX_PA23C_SERCOM3_PAD1; // SCL
+
+    // Инициализация модуля I2C Slave
+    i2c_slave_init(&i2c_slave_instance, SERCOM3, &config_i2c_slave);
+    i2c_slave_enable(&i2c_slave_instance);
+
+    // Регистрируем callback для чтения данных
+    i2c_slave_register_callback(&i2c_slave_instance, i2c_read_request_callback, I2C_SLAVE_CALLBACK_READ_REQUEST);
+    i2c_slave_enable_callback(&i2c_slave_instance, I2C_SLAVE_CALLBACK_READ_REQUEST);
+}
+
+int main(void) {
+    // Инициализация системных модулей
+    system_init();
+    SEGGER_RTT_WriteString(0, "I2C Slave with RTT Debugging\n");
+
+    // Конфигурация I2C Slave
+    configure_i2c_slave();
+
+    // Главный цикл
+    while (1) {
+        // Вывод данных, если буфер заполнен
+        if (received_length > 0) {
+            SEGGER_RTT_printf(0, "Total received bytes: %d\n", received_length);
+            received_length = 0;
+        }
+    }
+}
