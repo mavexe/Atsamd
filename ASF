@@ -1,50 +1,51 @@
 #include <asf.h>
 #include "SEGGER_RTT.h"
 
-#define I2C_SLAVE_ADDRESS 0x49 // Новый уникальный адрес слейва
-
-volatile uint8_t received_data = 0;
+#define I2C_SLAVE_ADDRESS 0x49 // Уникальный адрес I2C слейва
 
 struct i2c_slave_module i2c_slave_instance;
+
+void configure_i2c_pins(void) {
+    struct system_pinmux_config pin_config;
+    system_pinmux_get_config_defaults(&pin_config);
+
+    // Настройка SDA (PA22) для SERCOM5_PAD0
+    pin_config.mux_position = MUX_PA22D_SERCOM5_PAD0;
+    pin_config.direction = SYSTEM_PINMUX_PIN_DIR_INPUT;
+    system_pinmux_pin_set_config(PIN_PA22, &pin_config);
+
+    // Настройка SCL (PA23) для SERCOM5_PAD1
+    pin_config.mux_position = MUX_PA23D_SERCOM5_PAD1;
+    pin_config.direction = SYSTEM_PINMUX_PIN_DIR_INPUT;
+    system_pinmux_pin_set_config(PIN_PA23, &pin_config);
+}
 
 void configure_i2c_slave(void) {
     struct i2c_slave_config config;
     i2c_slave_get_config_defaults(&config);
 
+    // Настройка адреса слейва
     config.address = I2C_SLAVE_ADDRESS;
-    config.address_mode = I2C_SLAVE_ADDRESS_MODE_MASK; // 7-битный адрес
+    config.address_mode = I2C_SLAVE_ADDRESS_MODE_MASK; // 7-битный режим
 
-    i2c_slave_init(&i2c_slave_instance, SERCOM3, &config);
+    // Инициализация SERCOM5 как I2C слейва
+    i2c_slave_init(&i2c_slave_instance, SERCOM5, &config);
+
+    // Включение слейва
     i2c_slave_enable(&i2c_slave_instance);
 
-    SEGGER_RTT_WriteString(0, "I2C Slave configured with address 0x49\n");
-}
-
-void i2c_slave_callback(struct i2c_slave_module *const module) {
-    uint8_t received_byte = 0;
-
-    if (i2c_slave_read_packet_wait(module, &received_byte) == STATUS_OK) {
-        received_data = received_byte;
-        SEGGER_RTT_printf(0, "Received: 0x%02X\n", received_data);
-    } else {
-        SEGGER_RTT_WriteString(0, "Failed to receive data\n");
-    }
-}
-
-void configure_i2c_callbacks(void) {
-    i2c_slave_register_callback(&i2c_slave_instance, i2c_slave_callback, I2C_SLAVE_CALLBACK_READ_COMPLETE);
-    i2c_slave_enable_callback(&i2c_slave_instance, I2C_SLAVE_CALLBACK_READ_COMPLETE);
+    SEGGER_RTT_WriteString(0, "I2C Slave initialized on SERCOM5 with address 0x49\n");
 }
 
 int main(void) {
     system_init();
     SEGGER_RTT_Init();
-    SEGGER_RTT_WriteString(0, "I2C Slave Initialized\n");
 
+    // Настройка пинов и I2C
+    configure_i2c_pins();
     configure_i2c_slave();
-    configure_i2c_callbacks();
 
     while (1) {
-        __WFI(); // Ждём прерываний
+        __WFI(); // Ожидание прерываний
     }
 }
