@@ -14,29 +14,9 @@ I2C i2c_A(SERCOM5, PINMUX_PA22D_SERCOM5_PAD0, PINMUX_PA23D_SERCOM5_PAD1, true);
 
 void SERCOM5_Handler(void) // Обработка прерываний I2C
 {
-    i2c_A.onService();
+    i2c_A.processInterrupt();
     if (buffer_length > 0) {
         switch_to_uart = true; // Устанавливаем флаг для переключения на UART
-    }
-}
-
-void I2C::onService(void)
-{
-    if (sercom->I2CS.INTFLAG.bit.PREC) {
-        sercom->I2CS.CTRLB.bit.ACKACT = 0;
-        sercom->I2CS.CTRLB.bit.CMD = 0x3;
-    } else if (sercom->I2CS.INTFLAG.bit.AMATCH) {
-        sercom->I2CS.INTFLAG.bit.AMATCH = 1;
-        if (sercom->I2CS.STATUS.bit.DIR == 0) {
-            ir = 0;
-            available = 0;
-        }
-    } else if (sercom->I2CS.INTFLAG.bit.DRDY) {
-        if (sercom->I2CS.STATUS.bit.DIR == 0) {
-            global_buffer[buffer_length++] = sercom->I2CS.DATA.reg;
-            sercom->I2CS.CTRLB.bit.CMD = 0x3;
-            sercom->I2CS.CTRLB.bit.ACKACT = 0;
-        }
     }
 }
 
