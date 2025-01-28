@@ -12,7 +12,7 @@ void configure_i2c_slave(void) {
     struct i2c_slave_config config;
     i2c_slave_get_config_defaults(&config);
 
-    config.address = I2C_SLAVE_ADDRESS;
+    config.address = I2C_SLAVE_ADDRESS; // Указываем адрес
     config.address_mode = I2C_SLAVE_ADDRESS_MODE_MASK; // 7-битный адрес
 
     i2c_slave_init(&i2c_slave_instance, SERCOM3, &config);
@@ -53,6 +53,6 @@ int main(void) {
     configure_i2c_callbacks();
 
     while (1) {
-        __WFI();
+        __WFI(); // Ожидание прерываний
     }
 }
