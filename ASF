@@ -1,7 +1,7 @@
 #include <asf.h>
 #include "SEGGER_RTT.h"
 
-#define I2C_SLAVE_ADDRESS 0x48 // I2C адрес слейва
+#define I2C_SLAVE_ADDRESS 0x49 // Новый уникальный адрес слейва
 
 volatile uint8_t received_data = 0;
 
@@ -11,26 +11,21 @@ void configure_i2c_slave(void) {
     struct i2c_slave_config config;
     i2c_slave_get_config_defaults(&config);
 
-    config.address = I2C_SLAVE_ADDRESS; // Установка адреса
-    config.address_mode = I2C_SLAVE_ADDRESS_MODE_MASK; // 7-битный режим
+    config.address = I2C_SLAVE_ADDRESS;
+    config.address_mode = I2C_SLAVE_ADDRESS_MODE_MASK; // 7-битный адрес
 
     i2c_slave_init(&i2c_slave_instance, SERCOM3, &config);
     i2c_slave_enable(&i2c_slave_instance);
 
-    SEGGER_RTT_WriteString(0, "I2C Slave configured\n");
+    SEGGER_RTT_WriteString(0, "I2C Slave configured with address 0x49\n");
 }
 
 void i2c_slave_callback(struct i2c_slave_module *const module) {
     uint8_t received_byte = 0;
 
-    // Чтение одного байта
     if (i2c_slave_read_packet_wait(module, &received_byte) == STATUS_OK) {
-        SEGGER_RTT_printf(0, "Received: 0x%02X\n", received_byte);
         received_data = received_byte;
-
-        // Отправка ответа
-        uint8_t response = 0xBB; // Пример ответа
-        i2c_slave_write_packet_wait(module, &response);
+        SEGGER_RTT_printf(0, "Received: 0x%02X\n", received_data);
     } else {
         SEGGER_RTT_WriteString(0, "Failed to receive data\n");
     }
