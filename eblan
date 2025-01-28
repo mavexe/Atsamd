@@ -1,118 +1,101 @@
+#include "driver_init.h"
+#include "SEGGER_RTT.h"
+#include "i2c.h"
 #include "sam.h"
-#include <stdint.h>
 
-#define BUF_SIZE 256
+// Буфер для данных
+uint8_t global_buffer[BUF_SIZE];
+volatile int buffer_length = 0;
 
-// Глобальный буфер для хранения данных
-uint8_t rx_buf[BUF_SIZE];
-uint8_t rx_len = 0;
+// Флаг для переключения
+volatile bool switch_to_uart = false;
 
-// Флаги для управления переключением
-volatile bool data_received = false;
+I2C i2c_A(SERCOM5, PINMUX_PA22D_SERCOM5_PAD0, PINMUX_PA23D_SERCOM5_PAD1, true);
 
-// Инициализация I2C
-void init_i2c(void) {
-    // Включение тактирования для SERCOM5
-    PM->APBCMASK.reg |= PM_APBCMASK_SERCOM5;
-
-    // Настройка генератора для SERCOM5
-    GCLK->CLKCTRL.reg = GCLK_CLKCTRL_ID(SERCOM5_GCLK_ID_CORE) |
-                        GCLK_CLKCTRL_CLKEN |
-                        GCLK_CLKCTRL_GEN(0); // Генератор 0
-
-    // Настройка пинов PA22 (SDA) и PA23 (SCL) для I2C
-    PORT->Group[0].PINCFG[22].reg = PORT_PINCFG_PMUXEN; // PA22 (SDA)
-    PORT->Group[0].PINCFG[23].reg = PORT_PINCFG_PMUXEN; // PA23 (SCL)
-    PORT->Group[0].PMUX[11].reg = PORT_PMUX_PMUXE(2) | PORT_PMUX_PMUXO(2); // SERCOM5: PA22 (PAD[0]), PA23 (PAD[1])
-
-    // Конфигурация SERCOM5 для I2C Slave
-    SERCOM5->I2CS.CTRLA.reg = SERCOM_I2CS_CTRLA_MODE_I2C_SLAVE | // Режим I2C Slave
-                              SERCOM_I2CS_CTRLA_ENABLE;          // Включение I2C
-
-    // Установка адреса I2C Slave
-    SERCOM5->I2CS.ADDR.reg = SERCOM_I2CS_ADDR_ADDR(0x9); // Адрес I2C Slave (0x9)
-
-    // Включение прерываний для I2C Slave
-    SERCOM5->I2CS.INTENSET.reg = SERCOM_I2CS_INTENSET_AMATCH | // Прерывание по совпадению адреса
-                                 SERCOM_I2CS_INTENSET_DRDY;    // Прерывание по готовности данных
-    NVIC_EnableIRQ(SERCOM5_IRQn); // Включение прерывания SERCOM5
+void SERCOM5_Handler(void) // Обработка прерываний I2C
+{
+    i2c_A.onService();
+    if (buffer_length > 0) {
+        switch_to_uart = true; // Устанавливаем флаг для переключения на UART
+    }
 }
 
-// Инициализация UART
-void init_uart(void) {
-    // Настройка пинов PA20 (TX) и PA21 (RX) для UART
-    PORT->Group[0].PINCFG[20].reg = PORT_PINCFG_PMUXEN; // PA20 (TX)
-    PORT->Group[0].PINCFG[21].reg = PORT_PINCFG_PMUXEN; // PA21 (RX)
-    PORT->Group[0].PMUX[10].reg = PORT_PMUX_PMUXE(2) | PORT_PMUX_PMUXO(2); // SERCOM5: PA20 (PAD[2]), PA21 (PAD[3])
-
-    // Конфигурация SERCOM5 для UART
-    SERCOM5->USART.CTRLA.reg = SERCOM_USART_CTRLA_MODE_USART_INT_CLK | // Внутренний источник тактирования
-                               SERCOM_USART_CTRLA_DORD |              // Младший бит вперед
-                               (0x3 << SERCOM_USART_CTRLA_RXPO_Pos) | // RX на PAD[3] (PA21)
-                               (0x1 << SERCOM_USART_CTRLA_TXPO_Pos);  // TX на PAD[2] (PA20)
-
-    SERCOM5->USART.CTRLB.reg = SERCOM_USART_CTRLB_RXEN | // Включение приемника
-                               SERCOM_USART_CTRLB_TXEN; // Включение передатчика
-
-    // Установка скорости передачи данных (19200 бод при 1 MHz)
-    SERCOM5->USART.BAUD.reg = (1000000 / (16 * 19200)) - 1;
-
-    // Включение UART
-    SERCOM5->USART.CTRLA.reg |= SERCOM_USART_CTRLA_ENABLE;
-}
-
-// Переключение SERCOM5 в режим I2C
-void switch_to_i2c(void) {
-    SERCOM5->USART.CTRLA.reg &= ~SERCOM_USART_CTRLA_ENABLE; // Отключение UART
-    init_i2c(); // Переконфигурация в режим I2C
-}
-
-// Переключение SERCOM5 в режим UART
-void switch_to_uart(void) {
-    SERCOM5->I2CS.CTRLA.reg &= ~SERCOM_I2CS_CTRLA_ENABLE; // Отключение I2C
-    init_uart(); // Переконфигурация в режим UART
-}
-
-// Обработчик прерывания SERCOM5 (I2C Slave)
-void SERCOM5_Handler(void) {
-    if (SERCOM5->I2CS.INTFLAG.bit.PREC) {
-        // Прерывание по Stop condition
-        SERCOM5->I2CS.INTFLAG.bit.PREC = 1; // Сброс флага
-        data_received = true; // Установка флага получения данных
-    } else if (SERCOM5->I2CS.INTFLAG.bit.AMATCH) {
-        // Прерывание по совпадению адреса
-        SERCOM5->I2CS.INTFLAG.bit.AMATCH = 1; // Сброс флага
-        rx_len = 0; // Сброс длины буфера
-    } else if (SERCOM5->I2CS.INTFLAG.bit.DRDY) {
-        // Прерывание по готовности данных
-        if (SERCOM5->I2CS.STATUS.bit.DIR == 0) {
-            // Прием данных
-            rx_buf[rx_len++] = SERCOM5->I2CS.DATA.reg; // Чтение данных
+void I2C::onService(void)
+{
+    if (sercom->I2CS.INTFLAG.bit.PREC) {
+        sercom->I2CS.CTRLB.bit.ACKACT = 0;
+        sercom->I2CS.CTRLB.bit.CMD = 0x3;
+    } else if (sercom->I2CS.INTFLAG.bit.AMATCH) {
+        sercom->I2CS.INTFLAG.bit.AMATCH = 1;
+        if (sercom->I2CS.STATUS.bit.DIR == 0) {
+            ir = 0;
+            available = 0;
+        }
+    } else if (sercom->I2CS.INTFLAG.bit.DRDY) {
+        if (sercom->I2CS.STATUS.bit.DIR == 0) {
+            global_buffer[buffer_length++] = sercom->I2CS.DATA.reg;
+            sercom->I2CS.CTRLB.bit.CMD = 0x3;
+            sercom->I2CS.CTRLB.bit.ACKACT = 0;
         }
     }
 }
 
+void init_uart(void) {
+    PM->APBCMASK.reg |= PM_APBCMASK_SERCOM5;
+    GCLK->CLKCTRL.reg = GCLK_CLKCTRL_ID(SERCOM5_GCLK_ID_CORE) |
+                        GCLK_CLKCTRL_CLKEN |
+                        GCLK_CLKCTRL_GEN(0);
+
+    PORT->Group[0].PINCFG[20].reg = PORT_PINCFG_PMUXEN;
+    PORT->Group[0].PINCFG[21].reg = PORT_PINCFG_PMUXEN;
+    PORT->Group[0].PMUX[10].reg = PORT_PMUX_PMUXE(2) | PORT_PMUX_PMUXO(2);
+
+    SERCOM5->USART.CTRLA.reg = SERCOM_USART_CTRLA_MODE_USART_INT_CLK |
+                               SERCOM_USART_CTRLA_DORD |
+                               (0x3 << SERCOM_USART_CTRLA_RXPO_Pos) |
+                               (0x1 << SERCOM_USART_CTRLA_TXPO_Pos);
+
+    SERCOM5->USART.CTRLB.reg = SERCOM_USART_CTRLB_RXEN |
+                               SERCOM_USART_CTRLB_TXEN;
+
+    SERCOM5->USART.BAUD.reg = (1000000 / (16 * 19200)) - 1;
+    SERCOM5->USART.CTRLA.reg |= SERCOM_USART_CTRLA_ENABLE;
+}
+
+void deinit_uart(void) {
+    SERCOM5->USART.CTRLA.reg &= ~SERCOM_USART_CTRLA_ENABLE;
+}
+
+void init_i2c_slave(void) {
+    i2c_A.setSlave(0x9);
+}
+
+void deinit_i2c_slave(void) {
+    SERCOM5->I2CS.CTRLA.reg &= ~SERCOM_I2CS_CTRLA_ENABLE;
+}
+
+void send_uart_data(void) {
+    for (int i = 0; i < buffer_length; i++) {
+        while (!(SERCOM5->USART.INTFLAG.bit.DRE)) {}
+        SERCOM5->USART.DATA.reg = global_buffer[i];
+    }
+    buffer_length = 0; // Очистка буфера
+}
+
 int main(void) {
     SystemInit();
+    SEGGER_RTT_printf(0, "System Initialized\n");
 
-    // Инициализация I2C
-    switch_to_i2c();
+    init_i2c_slave();
 
     while (1) {
-        if (data_received) {
-            // Переключение в режим UART
-            switch_to_uart();
-
-            // Передача данных по UART
-            for (int i = 0; i < rx_len; i++) {
-                while (!(SERCOM5->USART.INTFLAG.reg & SERCOM_USART_INTFLAG_DRE)); // Ожидание готовности передатчика
-                SERCOM5->USART.DATA.reg = rx_buf[i]; // Отправка данных
-            }
-
-            // Переключение обратно в режим I2C
-            switch_to_i2c();
-
-            data_received = false; // Сброс флага
+        if (switch_to_uart) {
+            deinit_i2c_slave();
+            init_uart();
+            send_uart_data();
+            deinit_uart();
+            init_i2c_slave();
+            switch_to_uart = false;
         }
     }
 }
