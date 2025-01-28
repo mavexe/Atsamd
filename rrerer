@@ -1,0 +1,92 @@
+/*
+ * GccApplication18.cpp
+ *
+ * Created: 28.01.2025 10:12:29
+ * Author : dmustafin
+ */ 
+
+#include "driver_init.h"
+
+#include "SEGGER_RTT/SEGGER_RTT.h"
+#include "i2c/i2c.h"
+
+#include "sam.h"
+
+void init_uart(void) {
+	// Включение тактирования для модуля SERCOM5
+	PM->APBCMASK.reg |= PM_APBCMASK_SERCOM5;
+
+	// Настройка генератора для SERCOM5 на 1 MHz
+	GCLK->CLKCTRL.reg = GCLK_CLKCTRL_ID(SERCOM5_GCLK_ID_CORE) |
+	GCLK_CLKCTRL_CLKEN |
+	GCLK_CLKCTRL_GEN(0); // Генератор 0
+
+	// Настройка пинов PA20 и PA21 для работы с UART (SERCOM5)
+	PORT->Group[0].PINCFG[20].reg = PORT_PINCFG_PMUXEN; // Включение мультиплексирования для PA20
+	PORT->Group[0].PINCFG[21].reg = PORT_PINCFG_PMUXEN; // Включение мультиплексирования для PA21
+
+	PORT->Group[0].PMUX[10].reg = PORT_PMUX_PMUXE(2) | PORT_PMUX_PMUXO(2); // SERCOM5: PA20 (PAD[2]), PA21 (PAD[3])
+
+	// Конфигурация SERCOM5 для UART
+	SERCOM5->USART.CTRLA.reg = SERCOM_USART_CTRLA_MODE_USART_INT_CLK | // Внутренний источник тактирования
+	SERCOM_USART_CTRLA_DORD |              // Младший бит вперед
+	(0x3 << SERCOM_USART_CTRLA_RXPO_Pos) | // RX на PAD[3] (PA21)
+	(0x1 << SERCOM_USART_CTRLA_TXPO_Pos);  // TX на PAD[2] (PA20)
+
+	SERCOM5->USART.CTRLB.reg = SERCOM_USART_CTRLB_RXEN | // Включение приемника
+	SERCOM_USART_CTRLB_TXEN; // Включение передатчика
+
+	// Установка скорости передачи данных (19200 бод при 1 MHz)
+	SERCOM5->USART.BAUD.reg = (1000000 / (16 * 19200)) - 1; // Формула: BAUD = (f_ref / (16 * f_baud)) - 1
+
+	// Включение UART
+	SERCOM5->USART.CTRLA.reg |= SERCOM_USART_CTRLA_ENABLE;
+}
+
+//вывод массива байтов
+void print_buf(uint8_t *buf, uint8_t len)
+{
+	for(int k=0; k<len; k++)
+	{
+		SEGGER_RTT_printf(0, "%02x ", buf[k]);
+	}
+	SEGGER_RTT_printf(0, "\n");
+}
+
+I2C i2c_A(SERCOM5, PINMUX_PA22D_SERCOM5_PAD0, PINMUX_PA23D_SERCOM5_PAD1,true);
+
+void receiveEvent(int len)
+{ 
+	SEGGER_RTT_printf(0, "receiv\n");
+	print_buf(i2c_A.rx_buf, len);
+	
+}
+
+void requestEvent()
+{
+ // 	SEGGER_RTT_printf(0, "request\n");
+	i2c_A.tx_buf[0]=7;
+	i2c_A.tx_buf[1]=8;
+	i2c_A.tx_buf[2]=9;
+}
+
+void SERCOM5_Handler(void) //обработка входящего сообщения по прерыванию I2C
+{
+	i2c_A.onService();
+}
+
+int main(void)
+{
+	SystemInit();		
+	i2c_A.setSlave(0x9);
+	i2c_A.onReceive(receiveEvent);
+	i2c_A.onRequest(requestEvent);
+	/* Initialize the SAM system */
+	SEGGER_RTT_printf(0, "!!!");
+	/* Replace with your application code */
+	while (1)
+	{
+		
+	}
+}
+
