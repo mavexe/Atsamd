@@ -1,0 +1,43 @@
+
+#include "SEGGER_RTT.h"
+#include "i2c.h"
+
+#include "sam.h"
+
+
+//вывод массива байтов
+void print_buf(uint8_t *buf, uint8_t len)
+{
+	for(int k=0; k<len; k++)
+	{
+		SEGGER_RTT_printf(0, "%02x ", buf[k]);
+	}
+	SEGGER_RTT_printf(0, "\n");
+}
+
+I2C i2c_A(SERCOM5, PINMUX_PA22D_SERCOM5_PAD0, PINMUX_PA23D_SERCOM5_PAD1,true);
+
+void receiveEvent(int len)
+{
+	SEGGER_RTT_printf(0, "receiv\n");
+	print_buf(i2c_A.rx_buf, len);
+}
+
+void SERCOM5_Handler(void) //обработка входящего сообщения по прерыванию I2C
+{
+	i2c_A.onService();
+}
+
+int main(void)
+{
+	SystemInit();
+	i2c_A.setSlave(0x9);
+	i2c_A.onReceive(receiveEvent);
+	/* Initialize the SAM system */
+	SEGGER_RTT_printf(0, "!!!");
+	/* Replace with your application code */
+	while (1)
+	{
+		
+	}
+}
