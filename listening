@@ -1,0 +1,31 @@
+#include <asf.h>
+#include "SEGGER_RTT.h"
+
+#define I2C_SLAVE_ADDRESS 0x49 // Новый уникальный адрес
+
+struct i2c_slave_module i2c_slave_instance;
+
+void configure_i2c_slave(void) {
+    struct i2c_slave_config config;
+    i2c_slave_get_config_defaults(&config);
+
+    config.address = I2C_SLAVE_ADDRESS; // Установка адреса
+    config.address_mode = I2C_SLAVE_ADDRESS_MODE_MASK; // 7-битный режим
+
+    i2c_slave_init(&i2c_slave_instance, SERCOM3, &config);
+    i2c_slave_enable(&i2c_slave_instance);
+
+    SEGGER_RTT_WriteString(0, "I2C Slave configured with address 0x49\n");
+}
+
+int main(void) {
+    system_init();
+    SEGGER_RTT_Init();
+    SEGGER_RTT_WriteString(0, "I2C Slave Initialized\n");
+
+    configure_i2c_slave();
+
+    while (1) {
+        __WFI(); // Ждём прерываний
+    }
+}
