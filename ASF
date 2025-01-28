@@ -1,27 +1,47 @@
 #include "SEGGER_RTT.h"
-#include "i2c.h"
 #include "sam.h"
 
-uint8_t global_rx_buf[256]; // Глобальный буфер для хранения данных из I2C
-uint8_t rx_len = 0;         // Длина данных в буфере
+#define I2C_SLAVE_ADDRESS 0x9
+#define UART_BAUD_RATE 19200
 
-bool is_uart_active = false; // Флаг, указывающий текущий режим (I2C или UART)
+// Глобальный буфер для хранения данных
+uint8_t rx_buf[256];
+uint8_t rx_len = 0;
 
-I2C i2c_A(SERCOM5, PINMUX_PA22D_SERCOM5_PAD0, PINMUX_PA23D_SERCOM5_PAD1, true);
-
-// Функция инициализации UART
-void init_uart(void) {
+// Инициализация I2C
+void init_i2c(void) {
     // Включение тактирования для модуля SERCOM5
     PM->APBCMASK.reg |= PM_APBCMASK_SERCOM5;
 
-    // Настройка генератора для SERCOM5
+    // Настройка генератора для SERCOM5 на 1 MHz
     GCLK->CLKCTRL.reg = GCLK_CLKCTRL_ID(SERCOM5_GCLK_ID_CORE) |
                         GCLK_CLKCTRL_CLKEN |
                         GCLK_CLKCTRL_GEN(0); // Генератор 0
 
-    // Настройка пинов PA20 (TX) и PA21 (RX) для UART
-    PORT->Group[0].PINCFG[20].reg = PORT_PINCFG_PMUXEN; // Мультиплексирование для PA20
-    PORT->Group[0].PINCFG[21].reg = PORT_PINCFG_PMUXEN; // Мультиплексирование для PA21
+    // Настройка пинов PA22 и PA23 для работы с I2C (SERCOM5)
+    PORT->Group[0].PINCFG[22].reg = PORT_PINCFG_PMUXEN; // Включение мультиплексирования для PA22
+    PORT->Group[0].PINCFG[23].reg = PORT_PINCFG_PMUXEN; // Включение мультиплексирования для PA23
+
+    PORT->Group[0].PMUX[11].reg = PORT_PMUX_PMUXE(2) | PORT_PMUX_PMUXO(2); // SERCOM5: PA22 (PAD[0]), PA23 (PAD[1])
+
+    // Конфигурация SERCOM5 для I2C
+    SERCOM5->I2CM.CTRLA.reg = SERCOM_I2CM_CTRLA_MODE_I2C_SLAVE | // Режим I2C Slave
+                              SERCOM_I2CM_CTRLA_ENABLE;          // Включение I2C
+
+    SERCOM5->I2CM.ADDR.reg = SERCOM_I2CM_ADDR_ADDR(I2C_SLAVE_ADDRESS) | // Адрес устройства
+                             SERCOM_I2CM_ADDR_ADDREN;                   // Включение адреса
+
+    // Включение прерываний для I2C
+    SERCOM5->I2CM.INTENSET.reg = SERCOM_I2CM_INTENSET_SB | // Прерывание по началу передачи
+                                 SERCOM_I2CM_INTENSET_ERROR; // Прерывание по ошибке
+}
+
+// Инициализация UART
+void init_uart(void) {
+    // Настройка пинов PA20 и PA21 для работы с UART (SERCOM5)
+    PORT->Group[0].PINCFG[20].reg = PORT_PINCFG_PMUXEN; // Включение мультиплексирования для PA20
+    PORT->Group[0].PINCFG[21].reg = PORT_PINCFG_PMUXEN; // Включение мультиплексирования для PA21
+
     PORT->Group[0].PMUX[10].reg = PORT_PMUX_PMUXE(2) | PORT_PMUX_PMUXO(2); // SERCOM5: PA20 (PAD[2]), PA21 (PAD[3])
 
     // Конфигурация SERCOM5 для UART
@@ -34,68 +54,55 @@ void init_uart(void) {
                                SERCOM_USART_CTRLB_TXEN; // Включение передатчика
 
     // Установка скорости передачи данных (19200 бод при 1 MHz)
-    SERCOM5->USART.BAUD.reg = (1000000 / (16 * 19200)) - 1; // Формула: BAUD = (f_ref / (16 * f_baud)) - 1
+    SERCOM5->USART.BAUD.reg = (1000000 / (16 * UART_BAUD_RATE)) - 1; // Формула: BAUD = (f_ref / (16 * f_baud)) - 1
 
     // Включение UART
     SERCOM5->USART.CTRLA.reg |= SERCOM_USART_CTRLA_ENABLE;
-
-    is_uart_active = true;
 }
 
-// Функция инициализации I2C
-void init_i2c(void) {
-    // Включение тактирования для модуля SERCOM5
-    PM->APBCMASK.reg |= PM_APBCMASK_SERCOM5;
-
-    // Настройка генератора для SERCOM5
-    GCLK->CLKCTRL.reg = GCLK_CLKCTRL_ID(SERCOM5_GCLK_ID_CORE) |
-                        GCLK_CLKCTRL_CLKEN |
-                        GCLK_CLKCTRL_GEN(0); // Генератор 0
-
-    // Настройка пинов PA22 (SDA) и PA23 (SCL) для I2C
-    PORT->Group[0].PINCFG[22].reg = PORT_PINCFG_PMUXEN; // Мультиплексирование для PA22
-    PORT->Group[0].PINCFG[23].reg = PORT_PINCFG_PMUXEN; // Мультиплексирование для PA23
-    PORT->Group[0].PMUX[11].reg = PORT_PMUX_PMUXE(3) | PORT_PMUX_PMUXO(3); // SERCOM5: PA22 (PAD[0]), PA23 (PAD[1])
-
-    i2c_A.setSlave(0x9); // Установка адреса слейва
-    i2c_A.onReceive([](int len) {
-        // Обработка получения данных по I2C
-        SEGGER_RTT_WriteString(0, "I2C Data Received\n");
-        rx_len = len;
-        memcpy(global_rx_buf, i2c_A.rx_buf, len); // Копирование данных в глобальный буфер
-
-        // Переключение на UART для передачи данных
-        if (!is_uart_active) {
-            SERCOM5->USART.CTRLA.reg &= ~SERCOM_USART_CTRLA_ENABLE; // Отключить I2C
-            init_uart();
-        }
-
-        // Передача данных через UART
-        for (int i = 0; i < rx_len; i++) {
-            while (!(SERCOM5->USART.INTFLAG.reg & SERCOM_USART_INTFLAG_DRE)); // Ожидание готовности буфера
-            SERCOM5->USART.DATA.reg = global_rx_buf[i]; // Отправка байта
-        }
-
-        // Возвращение в режим I2C
-        SERCOM5->USART.CTRLA.reg &= ~SERCOM_USART_CTRLA_ENABLE; // Отключить UART
-        init_i2c();
-    });
-
-    is_uart_active = false;
+// Переключение SERCOM5 в режим I2C
+void switch_to_i2c(void) {
+    SERCOM5->USART.CTRLA.reg &= ~SERCOM_USART_CTRLA_ENABLE; // Отключение UART
+    init_i2c(); // Переконфигурация SERCOM5 в режим I2C
 }
 
+// Переключение SERCOM5 в режим UART
+void switch_to_uart(void) {
+    SERCOM5->I2CM.CTRLA.reg &= ~SERCOM_I2CM_CTRLA_ENABLE; // Отключение I2C
+    init_uart(); // Переконфигурация SERCOM5 в режим UART
+}
+
+// Обработчик прерывания для I2C
 void SERCOM5_Handler(void) {
-    if (!is_uart_active) {
-        i2c_A.onService(); // Обработка событий I2C
+    if (SERCOM5->I2CM.INTFLAG.reg & SERCOM_I2CM_INTFLAG_SB) {
+        // Чтение данных из I2C
+        rx_len = SERCOM5->I2CM.DATA.reg;
+        for (int i = 0; i < rx_len; i++) {
+            rx_buf[i] = SERCOM5->I2CM.DATA.reg;
+        }
+
+        // Переключение в режим UART и отправка данных
+        switch_to_uart();
+        for (int i = 0; i < rx_len; i++) {
+            while (!(SERCOM5->USART.INTFLAG.reg & SERCOM_USART_INTFLAG_DRE)); // Ожидание готовности передатчика
+            SERCOM5->USART.DATA.reg = rx_buf[i]; // Отправка данных
+        }
+
+        // Переключение обратно в режим I2C
+        switch_to_i2c();
     }
 }
 
 int main(void) {
     SystemInit();
-    init_i2c(); // Инициализация I2C
 
-    // Основной цикл
+    // Инициализация I2C
+    switch_to_i2c();
+
+    // Включение прерываний
+    NVIC_EnableIRQ(SERCOM5_IRQn);
+
     while (1) {
-        // В режиме ожидания ничего не делаем, обработка выполняется в прерываниях
+        // Основной цикл
     }
 }
