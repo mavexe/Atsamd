@@ -1,7 +1,7 @@
 #include <asf.h>
 #include "SEGGER_RTT.h"
 
-#define I2C_SLAVE_ADDRESS 0x10 // I2C Slave Address
+#define I2C_SLAVE_ADDRESS 0x10 // Адрес слейва (7-битный)
 
 volatile uint8_t i2c_received_data[16];
 volatile uint8_t i2c_index = 0;
@@ -13,7 +13,7 @@ void configure_i2c_slave(void) {
     i2c_slave_get_config_defaults(&config);
 
     config.address = I2C_SLAVE_ADDRESS;
-    config.address_mode = I2C_SLAVE_ADDRESS_MODE_MASK;
+    config.address_mode = I2C_SLAVE_ADDRESS_MODE_MASK; // 7-битный адрес
 
     i2c_slave_init(&i2c_slave_instance, SERCOM3, &config);
     i2c_slave_enable(&i2c_slave_instance);
@@ -24,7 +24,7 @@ void configure_i2c_slave(void) {
 void i2c_slave_callback(struct i2c_slave_module *const module) {
     uint8_t received_byte = 0;
 
-    // Чтение данных
+    // Чтение байта
     if (i2c_slave_read_packet_wait(module, &received_byte) == STATUS_OK) {
         SEGGER_RTT_printf(0, "Received: 0x%02X\n", received_byte);
 
@@ -33,7 +33,7 @@ void i2c_slave_callback(struct i2c_slave_module *const module) {
             i2c_index = 0;
         }
 
-        // Ответ
+        // Отправляем ответ мастеру
         uint8_t response = 0xAA;
         i2c_slave_write_packet_wait(module, &response);
     }
