@@ -1,83 +1,58 @@
 #include <asf.h>
 #include "SEGGER_RTT.h"
 
-#define SLAVE_ADDRESS 0x10
+#define I2C_SLAVE_ADDRESS 0x10 // Адрес слейва (7-битный)
+
+volatile uint8_t i2c_received_data[16];
+volatile uint8_t i2c_index = 0;
 
 struct i2c_slave_module i2c_slave_instance;
-uint8_t received_data[256]; // Буфер для данных, полученных по I2C
-uint8_t received_length = 0;
 
-void configure_system_clock(void) {
-    // Настройка системного тактирования на 1 МГц
-    struct system_gclk_gen_config gclk_conf;
-    system_gclk_gen_get_config_defaults(&gclk_conf);
+void configure_i2c_slave(void) {
+    struct i2c_slave_config config;
+    i2c_slave_get_config_defaults(&config);
 
-    gclk_conf.source_clock = SYSTEM_CLOCK_SOURCE_OSC8M;
-    gclk_conf.division_factor = 8; // Делитель для получения 1 МГц
-    system_gclk_gen_set_config(GCLK_GENERATOR_0, &gclk_conf);
-    system_gclk_gen_enable(GCLK_GENERATOR_0);
+    config.address = I2C_SLAVE_ADDRESS;
+    config.address_mode = I2C_SLAVE_ADDRESS_MODE_MASK; // 7-битный адрес
 
-    system_cpu_clock_set_division(SYSTEM_CPU_CLOCK_DIV_1);
-    system_apb_clock_set_division(SYSTEM_APB_CLOCK_DIV_1);
+    i2c_slave_init(&i2c_slave_instance, SERCOM3, &config);
+    i2c_slave_enable(&i2c_slave_instance);
+
+    SEGGER_RTT_WriteString(0, "I2C Slave configured on SERCOM3\n");
 }
 
-void configure_i2c_clock(void) {
-    // Настройка GCLK для SERCOM3
-    struct system_gclk_chan_config gclk_chan_conf;
-    system_gclk_chan_get_config_defaults(&gclk_chan_conf);
+void i2c_slave_callback(struct i2c_slave_module *const module) {
+    uint8_t received_byte = 0;
 
-    gclk_chan_conf.source_generator = GCLK_GENERATOR_0; // Используем 1 МГц
-    system_gclk_chan_set_config(SERCOM3_GCLK_ID_CORE, &gclk_chan_conf);
-    system_gclk_chan_enable(SERCOM3_GCLK_ID_CORE);
-}
+    // Чтение байта
+    if (i2c_slave_read_packet_wait(module, &received_byte) == STATUS_OK) {
+        SEGGER_RTT_printf(0, "Received: 0x%02X\n", received_byte);
 
-// Callback для обработки данных, полученных от мастера
-void i2c_read_request_callback(struct i2c_slave_module *const module) {
-    uint8_t data;
-    enum status_code status = i2c_slave_read_packet_wait(module, &data);
+        i2c_received_data[i2c_index++] = received_byte;
+        if (i2c_index >= sizeof(i2c_received_data)) {
+            i2c_index = 0;
+        }
 
-    if (status == STATUS_OK) {
-        received_data[received_length++] = data;
-        SEGGER_RTT_printf(0, "Received data: 0x%02X\n", data);
-    } else {
-        SEGGER_RTT_WriteString(0, "Error reading data\n");
+        // Отправляем ответ мастеру
+        uint8_t response = 0xAA;
+        i2c_slave_write_packet_wait(module, &response);
     }
 }
 
-void configure_i2c_slave(void) {
-    configure_i2c_clock(); // Настройка тактирования для SERCOM3
-
-    struct i2c_slave_config config_i2c_slave;
-    i2c_slave_get_config_defaults(&config_i2c_slave);
-
-    config_i2c_slave.address       = SLAVE_ADDRESS;
-    config_i2c_slave.address_mode  = I2C_SLAVE_ADDRESS_MODE_MASK;
-    config_i2c_slave.pinmux_pad0   = PINMUX_PA22C_SERCOM3_PAD0; // SDA
-    config_i2c_slave.pinmux_pad1   = PINMUX_PA23C_SERCOM3_PAD1; // SCL
-
-    i2c_slave_init(&i2c_slave_instance, SERCOM3, &config_i2c_slave);
-    i2c_slave_enable(&i2c_slave_instance);
-
-    // Регистрируем callback для чтения данных
-    i2c_slave_register_callback(&i2c_slave_instance, i2c_read_request_callback, I2C_SLAVE_CALLBACK_READ_REQUEST);
-    i2c_slave_enable_callback(&i2c_slave_instance, I2C_SLAVE_CALLBACK_READ_REQUEST);
+void configure_i2c_callbacks(void) {
+    i2c_slave_register_callback(&i2c_slave_instance, i2c_slave_callback, I2C_SLAVE_CALLBACK_READ_COMPLETE);
+    i2c_slave_enable_callback(&i2c_slave_instance, I2C_SLAVE_CALLBACK_READ_COMPLETE);
 }
 
 int main(void) {
-    // Инициализация системных модулей
     system_init();
-    configure_system_clock();
-    SEGGER_RTT_WriteString(0, "I2C Slave with RTT Debugging\n");
+    SEGGER_RTT_Init();
+    SEGGER_RTT_WriteString(0, "I2C Slave Initialized\n");
 
-    // Конфигурация I2C Slave
     configure_i2c_slave();
+    configure_i2c_callbacks();
 
-    // Главный цикл
     while (1) {
-        // Вывод данных, если буфер заполнен
-        if (received_length > 0) {
-            SEGGER_RTT_printf(0, "Total received bytes: %d\n", received_length);
-            received_length = 0;
-        }
+        __WFI();
     }
 }
