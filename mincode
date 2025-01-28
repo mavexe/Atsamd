@@ -2,6 +2,10 @@
 #include "i2c.h"
 #include "sam.h"
 
+bool is_uart_active = false; // Флаг, указывающий, активен ли UART
+
+I2C i2c_A(SERCOM5, PINMUX_PA22D_SERCOM5_PAD0, PINMUX_PA23D_SERCOM5_PAD1, true);
+
 void init_uart(void) {
 	// Включение тактирования для модуля SERCOM5
 	PM->APBCMASK.reg |= PM_APBCMASK_SERCOM5;
@@ -31,25 +35,56 @@ void init_uart(void) {
 
 	// Включение UART
 	SERCOM5->USART.CTRLA.reg |= SERCOM_USART_CTRLA_ENABLE;
+	is_uart_active = true;
 }
 
-bool is_uart_active = false; // Флаг, указывающий, активен ли UART
+void init_i2c(void) {
+	// Включение тактирования для модуля SERCOM5
+	PM->APBCMASK.reg |= PM_APBCMASK_SERCOM5;
 
-I2C i2c_A(SERCOM5, PINMUX_PA22D_SERCOM5_PAD0, PINMUX_PA23D_SERCOM5_PAD1,true);
+	// Настройка генератора для SERCOM5 на 1 MHz
+	GCLK->CLKCTRL.reg = GCLK_CLKCTRL_ID(SERCOM5_GCLK_ID_CORE) |
+	GCLK_CLKCTRL_CLKEN |
+	GCLK_CLKCTRL_GEN(0); // Генератор 0
 
-void SERCOM5_Handler(void) //обработка входящего сообщения по прерыванию I2C
-{
-	i2c_A.onService();
+	// Настройка пинов PA22 и PA23 для работы с I2C (SERCOM5)
+	PORT->Group[0].PINCFG[22].reg = PORT_PINCFG_PMUXEN; // Включение мультиплексирования для PA22
+	PORT->Group[0].PINCFG[23].reg = PORT_PINCFG_PMUXEN; // Включение мультиплексирования для PA23
+
+	PORT->Group[0].PMUX[11].reg = PORT_PMUX_PMUXE(3) | PORT_PMUX_PMUXO(3); // SERCOM5: PA22 (PAD[0]), PA23 (PAD[1])
+
+	// Настройка I2C слейва
+	i2c_A.setSlave(0x9);
+	i2c_A.onReceive([](int len) {
+		// Обработка получения данных по I2C
+		SEGGER_RTT_WriteString(0, "I2C Data Received\n");
+		// Переключение на UART для передачи данных
+		if (!is_uart_active) {
+			SERCOM5->USART.CTRLA.reg &= ~SERCOM_USART_CTRLA_ENABLE; // Отключить текущий режим
+			init_uart();
+		}
+		// Передача данных через UART
+		for (int i = 0; i < len; i++) {
+			while (!(SERCOM5->USART.INTFLAG.reg & SERCOM_USART_INTFLAG_DRE)); // Ожидание готовности буфера
+			SERCOM5->USART.DATA.reg = i2c_A.rx_buf[i]; // Отправка байта
+		}
+	});
+
+	is_uart_active = false;
 }
 
-void usart_transmit(){
-	
+void SERCOM5_Handler(void) {
+	if (!is_uart_active) {
+		i2c_A.onService();
+	}
 }
+
 int main(void) {
 	SystemInit();
-	i2c_A.setSlave(0x9);
-	// Инициализация RTT
+	init_i2c(); // Инициализация I2C
+
+	// Основной цикл
 	while (1) {
-		// Основной цикл
+		// Если требуется переключение обратно на I2C, можно добавить соответствующую логику здесь
 	}
 }
