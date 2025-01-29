@@ -1,134 +1,83 @@
-//#include "driver_init.h"
-
 #include "SEGGER_RTT.h"
 #include "i2c.h"
-
 #include "sam.h"
-I2C i2c_A(SERCOM5, PINMUX_PA22D_SERCOM5_PAD0, PINMUX_PA23D_SERCOM5_PAD1,true);
 
-void SERCOM5_Handler(void) //обработка входящего сообщения по прерыванию I2C
-{
-	i2c_A.onService();
+#define BUF_SIZE 64
+
+// Глобальный буфер для хранения данных из I2C
+uint8_t global_buffer[BUF_SIZE];
+volatile uint8_t buffer_length = 0;
+
+I2C i2c_A(SERCOM5, PINMUX_PA22D_SERCOM5_PAD0, PINMUX_PA23D_SERCOM5_PAD1, true);
+
+void init_uart(void) {
+    PM->APBCMASK.reg |= PM_APBCMASK_SERCOM5;
+    GCLK->CLKCTRL.reg = GCLK_CLKCTRL_ID(SERCOM5_GCLK_ID_CORE) |
+                        GCLK_CLKCTRL_CLKEN |
+                        GCLK_CLKCTRL_GEN(0);
+
+    PORT->Group[0].PINCFG[20].reg = PORT_PINCFG_PMUXEN;
+    PORT->Group[0].PINCFG[21].reg = PORT_PINCFG_PMUXEN;
+    PORT->Group[0].PMUX[10].reg = PORT_PMUX_PMUXE(2) | PORT_PMUX_PMUXO(2);
+
+    SERCOM5->USART.CTRLA.reg = SERCOM_USART_CTRLA_MODE_USART_INT_CLK |
+                               SERCOM_USART_CTRLA_DORD |
+                               (0x3 << SERCOM_USART_CTRLA_RXPO_Pos) |
+                               (0x1 << SERCOM_USART_CTRLA_TXPO_Pos);
+
+    SERCOM5->USART.CTRLB.reg = SERCOM_USART_CTRLB_RXEN |
+                               SERCOM_USART_CTRLB_TXEN;
+
+    SERCOM5->USART.BAUD.reg = (1000000 / (16 * 9600)) - 1;
+    SERCOM5->USART.CTRLA.reg |= SERCOM_USART_CTRLA_ENABLE;
 }
 
-int main(void)
-{
-	SystemInit();		
-	i2c_A.setSlave(0x9);
-	/* Initialize the SAM system */
-	SEGGER_RTT_printf(0, "!!!");
-	/* Replace with your application code */
-	while (1)
-	{
-		
-	}
+void deinit_uart(void) {
+    SERCOM5->USART.CTRLA.reg &= ~SERCOM_USART_CTRLA_ENABLE;
 }
 
-
-void I2C::onService(void)
-{  	  	
-  	//stop
-	if (sercom->I2CS.INTFLAG.bit.PREC)
-	{ 	  	
-	  	//sercom->I2CS.INTFLAG.bit.PREC = 1;
-		sercom->I2CS.CTRLB.bit.ACKACT = 0;
-		sercom->I2CS.CTRLB.bit.CMD = 0x3;
-		
-		if (sercom->I2CS.STATUS.bit.DIR==0 && onReceiveCallback)
-		{
-			available=ir;		
-			onReceiveCallback(ir);
-		}	
-		if (sercom->I2CS.STATUS.bit.DIR==1)
-		{
-			
-		}			
-	}	
-	//обработка адреса
-	else if(sercom->I2CS.INTFLAG.bit.AMATCH)
-	{	
-		sercom->I2CS.INTFLAG.bit.AMATCH = 1;		
-		it=0;		
-      	if(sercom->I2CS.STATUS.bit.DIR==1 && onReceiveCallback)
-      	{  
-        	//onReceiveCallback(ir);
-		  	onRequestCallback();
-      	}	
-		if(sercom->I2CS.STATUS.bit.DIR==0)
-      	{  
-		  	ir=0;
-        	available=0;
-			
-      	}
-		//SEGGER_RTT_printf(0, "*");
-	}  
-	//data ready
-	else if(sercom->I2CS.INTFLAG.bit.DRDY)
-	{			
-	  	//приём
-		if (sercom->I2CS.STATUS.bit.DIR==0)
-		{ 		  	
-		  	rx_buf[ir++] = sercom->I2CS.DATA.reg;			
-			sercom->I2CS.CTRLB.bit.CMD = 0x3;
-			sercom->I2CS.CTRLB.bit.ACKACT = 0;
-		}
-		//отправка на запрос
-		else if (sercom->I2CS.STATUS.bit.DIR==1)
-		{		  	 			  	
-			sercom->I2CS.DATA.reg = tx_buf[it++];			
-		}		
-	}
-  
+void send_uart_data(void) {
+    for (int i = 0; i < buffer_length; i++) {
+        while (!(SERCOM5->USART.INTFLAG.bit.DRE)) {}
+        SERCOM5->USART.DATA.reg = global_buffer[i];
+    }
+    buffer_length = 0; // Очистка буфера
 }
 
+void receiveEvent(int len) {
+    buffer_length = len;
+    for (int i = 0; i < len; i++) {
+        global_buffer[i] = i2c_A.rx_buf[i];
+    }
+    
+    // Переключаемся на UART и отправляем данные
+    deinit_i2c_slave();
+    init_uart();
+    send_uart_data();
+    deinit_uart();
+    init_i2c_slave();
+}
 
-class I2C
-{
-public:  
-    uint8_t slaveAddr;
-  	uint8_t available=0; 	//наличие принятых данных из i2c
-	uint8_t receive_ready=0;//готовность запрошенных данных к отправке 
-  	uint8_t rx_buf[BUF_SIZE]; //буфер куда приходят байты при приёме
-	uint8_t tx_buf[BUF_SIZE]={5,6,7,8,9}; //буфер из которого ситаются запросы
-	int it=0;
-	int ir=0;
-	Sercom* sercom;	
-	I2C(Sercom* s, uint32_t pinSDA, uint32_t pinSCL, bool on_irq);
-	bool on_irq;
-	void pin_set_peripheral_function(uint32_t pinmux);
-	void initClockNVIC();
-	
-	void setSlave(uint8_t address);
-	int slave_get_direction_wait();
-	int slave_read_packet_wait(uint8_t *buf, uint8_t len, uint8_t &len_in);
-	int slave_write_packet_wait(uint8_t *buf, uint8_t len);
+void init_i2c_slave(void) {
+    i2c_A.setSlave(9);
+    i2c_A.onReceive(receiveEvent);
+}
 
-	int setMaster(void);
-	int master_write_packet(uint8_t addr, uint8_t *buf, uint8_t len);
-	int master_read_packet(uint8_t addr, uint8_t *buf, uint8_t len);
-	int8_t masterReadByte(uint8_t addr, uint8_t &b, uint8_t reg);
-	int8_t masterReadWord(uint8_t addr, uint16_t &w, uint8_t reg);
-	int8_t masterReadBuf(uint8_t addr, uint8_t reg, uint8_t *buf, uint8_t len);
-	bool isMaster();
-	bool isSlave();
-	int parseMasterWireStatus();
-	void reset();
-	
-	void onService(void); //обработка IRQ в режиме Slave	
-	void (*onReceiveCallback)(int);
-	void (*onRequestCallback)(void);
-	void onReceive(void(*)(int));
-	void onRequest(void(*)(void));
-	
-private:
-  	uint16_t timeout_master;
-	uint16_t timeout_slave;
-	void enableAPBBClk( uint32_t item, uint8_t enable );
-	void enableAPBCClk( uint32_t item, uint8_t enable );
-	int8_t initGenericClk( uint32_t genClk, uint32_t id );
-	int i2c_slave_wait_for_bus();
-	int i2c_master_wait_for_bus();	
-	void i2c_slave_set_ctrlb_ackact(bool send_ack);
-	void i2c_slave_set_ctrlb_cmd3();		
-	int i2c_master_address_response();
-};
+void deinit_i2c_slave(void) {
+    SERCOM5->I2CS.CTRLA.reg &= ~SERCOM_I2CS_CTRLA_ENABLE;
+}
+
+void SERCOM5_Handler(void) {
+    i2c_A.onService();
+}
+
+int main(void) {
+    SystemInit();
+    SEGGER_RTT_printf(0, "System Initialized\n");
+
+    init_i2c_slave();
+
+    while (1) {
+        // Главный цикл
+    }
+}
