@@ -1,48 +1,15 @@
-class Uart //: public arduino::HardwareSerial
-{
-  public:
-	void pin_set_peripheral_function(uint32_t pinmux);
-	
-    Uart(SERCOM *_s, uint32_t _pinRX, uint32_t _pinTX, SercomRXPad _padRX, SercomUartTXPad _padTX);
-//    Uart(SERCOM *_s, uint8_t _pinRX, uint8_t _pinTX, SercomRXPad _padRX, SercomUartTXPad _padTX, uint8_t _pinRTS, uint8_t _pinCTS);
+void SERCOM5_Handler(void) {
+    // Если прерывание вызвано I2C
+    if (SERCOM5->I2CS.INTFLAG.bit.AMATCH || 
+        SERCOM5->I2CS.INTFLAG.bit.DRDY  || 
+        SERCOM5->I2CS.INTFLAG.bit.PREC) {
+        i2c_A.onService(); // Вызов обработчика I2C
+    }
 
-    void begin(unsigned long baudRate);
-    void begin(unsigned long baudrate, uint16_t config);
-//    void end();
-    int available();
-    int availableForWrite();
-//    int peek();
-    int read();	
-    void flush();
-    size_t write(const uint8_t data);
-	size_t write(const uint8_t *buffer, size_t size);
-    //using Print::write; // pull in write(str) and write(buf, size) from Print
-
-    void IrqHandler();
-
-//    operator bool() { return true; }
-
-	int print(const char* format, ...);
-	
-  private:
-    SERCOM *sercom;
-
-    SafeRingBufferN<SERIAL_BUFFER_SIZE> rxBuffer;
-    SafeRingBufferN<SERIAL_BUFFER_SIZE> txBuffer;
-	
-    uint32_t uc_pinRX;
-    uint32_t uc_pinTX;
-    SercomRXPad uc_padRX;
-    SercomUartTXPad uc_padTX;
-    /*uint8_t uc_pinRTS;
-    volatile uint32_t* pul_outsetRTS;
-    volatile uint32_t* pul_outclrRTS;
-    uint32_t ul_pinMaskRTS;
-    uint8_t uc_pinCTS;*/
-
-    SercomNumberStopBit extractNbStopBit(uint16_t config);
-    SercomUartCharSize extractCharSize(uint16_t config);
-    SercomParityMode extractParity(uint16_t config);
-	
-	
-};
+    // Если прерывание вызвано UART
+    if (SERCOM5->USART.INTFLAG.bit.RXC) { // RX готов к чтению
+        char received = SERCOM5->USART.DATA.reg;
+        SerialUSB.print("UART принял: ");
+        SerialUSB.println(received);
+    }
+}
