@@ -1,46 +1,67 @@
-#define I2C_SLAVE_ADDR  0x9  // Адрес I2C Slave
+#define I2C_SLAVE_ADDR  0x09  // Адрес I2C Slave (0x9)
 #define BUFFER_SIZE     64    // Размер буфера
 
 volatile uint8_t i2c_buffer[BUFFER_SIZE];
 volatile uint8_t buffer_index = 0;
+volatile bool data_received = false;
 
-I2C i2c(SERCOM5,PINMUX_PA22D_SERCOM5_PAD0,PINMUX_PA23D_SERCOM5_PAD1,true);
+I2C i2c(SERCOM5);
 Uart uart(SERCOM5, PA21, PA20, SERCOM_RX_PAD_1, UART_TX_PAD_0);
 
-void onI2CReceive(int count) {
-    buffer_index = 0;
-    while (i2c.available() && buffer_index < BUFFER_SIZE) {
-        i2c_buffer[buffer_index++] = i2c.read();
-    }
-    switch_sercom5_to_uart();
-}
-
 void SERCOM5_Handler(void) {
-    i2c.onService(); // Обработка прерываний I2C
+    if (SERCOM5->I2CS.INTFLAG.bit.SB) {  // Start Condition (I2C)
+        buffer_index = 0;  // Очищаем индекс буфера
+        SERCOM5->I2CS.INTFLAG.bit.SB = 1;
+    }
+
+    if (SERCOM5->I2CS.INTFLAG.bit.DRDY) {  // Данные готовы (I2C)
+        if (buffer_index < BUFFER_SIZE) {
+            i2c_buffer[buffer_index++] = SERCOM5->I2CS.DATA.reg;
+        }
+        SERCOM5->I2CS.INTFLAG.bit.DRDY = 1;
+    }
+
+    if (SERCOM5->I2CS.INTFLAG.bit.PREC) {  // Stop Condition (I2C)
+        SERCOM5->I2CS.INTFLAG.bit.PREC = 1;
+        data_received = true;  // Флаг, что данные готовы
+    }
+
+    if (SERCOM5->USART.INTFLAG.bit.DRE) {  // Готовность к передаче (UART)
+        if (buffer_index > 0) {
+            SERCOM5->USART.DATA.reg = i2c_buffer[--buffer_index];
+        } else {
+            SERCOM5->USART.INTENCLR.bit.DRE = 1;  // Отключаем прерывание
+        }
+    }
 }
 
 void switch_sercom5_to_uart() {
-    i2c.end(); // Отключаем I2C
-    uart.begin(9600);
-    
-    uart.print("I2C Data Received: ");
+    i2c.reset();  // Сбрасываем I2C перед переключением
+    uart.begin(9600);  // Включаем UART
+
+    uart.print("Received I2C data: ");
     for (uint8_t i = 0; i < buffer_index; i++) {
         uart.write(i2c_buffer[i]);
     }
     uart.write('\n');
-    
+
     switch_sercom5_to_i2c();
 }
 
 void switch_sercom5_to_i2c() {
-    uart.end(); // Отключаем UART
-    i2c.begin(I2C_SLAVE_ADDR);
-    i2c.onReceive(onI2CReceive); // Привязываем обработчик
+    uart.end();  // Отключаем UART
+    i2c.setSlave(I2C_SLAVE_ADDR);  // Переключаем обратно в I2C Slave
 }
 
 int main(void) {
     SystemInit();
     switch_sercom5_to_i2c();
     NVIC_EnableIRQ(SERCOM5_IRQn);
-    while (1) {}
+
+    while (1) {
+        if (data_received) {
+            data_received = false;
+            switch_sercom5_to_uart();
+        }
+    }
 }
