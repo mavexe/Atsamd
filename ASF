@@ -1,29 +1,27 @@
 #define I2C_SLAVE_ADDR  0x09  // Адрес I2C Slave (0x9)
 #define BUFFER_SIZE     64    // Размер буфера
 
-volatile uint8_t rx_buf[BUFFER_SIZE];  // Буфер для принятых данных
-volatile uint8_t buffer_index = 0;     // Индекс буфера
+volatile uint8_t rx_buf[BUFFER_SIZE];  // Буфер для приема
+volatile uint8_t buffer_index = 0;     // Индекс принятых данных
 
 I2C i2c(SERCOM5);
 
 // Функция приема данных от мастера
 void onI2CReceive(int count) {
-    buffer_index = 0; // Сбрасываем индекс
-    while (i2c.available() && buffer_index < BUFFER_SIZE) {
-        rx_buf[buffer_index++] = i2c.read(); // Читаем данные и сохраняем в буфере
-    }
+    buffer_index = 0; // Обнуляем индекс
+    uint8_t len_in = 0; 
+    i2c.slave_read_packet_wait(rx_buf, BUFFER_SIZE, len_in);  // Читаем пакет
+    buffer_index = len_in; // Фиксируем длину принятых данных
 }
 
 // Функция запроса данных от мастера (ЭХО-ответ)
 void onI2CRequest() {
-    for (uint8_t i = 0; i < buffer_index; i++) {
-        i2c.write(rx_buf[i]); // Отправляем полученные данные обратно
-    }
+    i2c.slave_write_packet_wait(rx_buf, buffer_index);  // Отправляем назад принятые данные
 }
 
 int main(void) {
     SystemInit();
-    i2c.setSlave(I2C_SLAVE_ADDR);  // Настраиваем как слейв с адресом 0x9
+    i2c.setSlave(I2C_SLAVE_ADDR);  // Настраиваем слейв с адресом 0x9
 
     i2c.onReceive(onI2CReceive);  // Привязываем обработчик приема данных
     i2c.onRequest(onI2CRequest);  // Привязываем обработчик запроса данных
