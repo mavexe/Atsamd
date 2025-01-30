@@ -1,8 +1,3 @@
-#include "sam.h"
-#include "SERCOM.h"
-#include "i2c.h"
-#include "Uart.h"
-
 #define I2C_SLAVE_ADDR  0x12  // Адрес I2C Slave
 #define BUFFER_SIZE     64    // Размер буфера
 
@@ -10,68 +5,37 @@ volatile uint8_t i2c_buffer[BUFFER_SIZE];
 volatile uint8_t buffer_index = 0;
 
 void SERCOM5_Handler(void) {
-    if (SERCOM5->I2CS.INTFLAG.bit.SB) {  // Start condition received
+    if (I2C_Slave_ReceivedStartCondition(SERCOM5)) {
         buffer_index = 0;
-        SERCOM5->I2CS.INTFLAG.bit.SB = 1;
     }
     
-    if (SERCOM5->I2CS.INTFLAG.bit.DRDY) {  // Data received
+    if (I2C_Slave_DataReady(SERCOM5)) {
         if (buffer_index < BUFFER_SIZE) {
-            i2c_buffer[buffer_index++] = SERCOM5->I2CS.DATA.reg;
+            i2c_buffer[buffer_index++] = I2C_Slave_ReadByte(SERCOM5);
         }
-        SERCOM5->I2CS.INTFLAG.bit.DRDY = 1;
     }
     
-    if (SERCOM5->I2CS.INTFLAG.bit.PREC) {  // Stop condition received
-        SERCOM5->I2CS.INTFLAG.bit.PREC = 1;
+    if (I2C_Slave_ReceivedStopCondition(SERCOM5)) {
         switch_sercom5_to_uart();
     }
 }
 
 void switch_sercom5_to_uart() {
-    // Выключаем I2C
-    SERCOM5->I2CS.CTRLA.bit.ENABLE = 0;
-    while (SERCOM5->I2CS.SYNCBUSY.bit.ENABLE);
+    I2C_Disable(SERCOM5);
     
-    // Настраиваем SERCOM5 как UART
-    SERCOM5->USART.CTRLA.reg = SERCOM_USART_CTRLA_MODE_USART_INT_CLK |
-                                SERCOM_USART_CTRLA_RXPO(1) |
-                                SERCOM_USART_CTRLA_TXPO(0) |
-                                SERCOM_USART_CTRLA_DORD;
-    SERCOM5->USART.CTRLB.reg = SERCOM_USART_CTRLB_RXEN |
-                                SERCOM_USART_CTRLB_TXEN;
-    while (SERCOM5->USART.SYNCBUSY.bit.CTRLB);
+    UART_Init(SERCOM5, 9600, UART_TX_PA20_RX_PA21);
     
-    SERCOM5->USART.BAUD.reg = 65536 - (F_CPU / (16 * 9600)); // Устанавливаем скорость UART 9600
-    SERCOM5->USART.CTRLA.bit.ENABLE = 1;
-    while (SERCOM5->USART.SYNCBUSY.bit.ENABLE);
-    
-    // Отправка данных через UART
     for (uint8_t i = 0; i < buffer_index; i++) {
-        while (!(SERCOM5->USART.INTFLAG.bit.DRE));
-        SERCOM5->USART.DATA.reg = i2c_buffer[i];
+        UART_Write(SERCOM5, i2c_buffer[i]);
     }
     
-    // Переключаем обратно в I2C после отправки данных
     switch_sercom5_to_i2c();
 }
 
 void switch_sercom5_to_i2c() {
-    // Выключаем UART
-    SERCOM5->USART.CTRLA.bit.ENABLE = 0;
-    while (SERCOM5->USART.SYNCBUSY.bit.ENABLE);
+    UART_Disable(SERCOM5);
     
-    // Настраиваем SERCOM5 как I2C Slave
-    SERCOM5->I2CS.CTRLA.reg = SERCOM_I2CS_CTRLA_MODE_I2C_SLAVE |
-                               SERCOM_I2CS_CTRLA_SDAHOLD(2) |
-                               SERCOM_I2CS_CTRLA_SPEED(0);
-    SERCOM5->I2CS.CTRLB.reg = SERCOM_I2CS_CTRLB_SMEN;
-    while (SERCOM5->I2CS.SYNCBUSY.bit.SYSOP);
-    
-    SERCOM5->I2CS.ADDR.reg = I2C_SLAVE_ADDR << 1;
-    
-    SERCOM5->I2CS.CTRLA.bit.ENABLE = 1;
-    while (SERCOM5->I2CS.SYNCBUSY.bit.ENABLE);
+    I2C_Slave_Init(SERCOM5, I2C_SLAVE_ADDR, I2C_SDA_PA22_SCL_PA23);
 }
 
 int main(void) {
