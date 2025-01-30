@@ -1,41 +1,39 @@
-#define I2C_SLAVE_ADDR  0x12  // Адрес I2C Slave
+#define I2C_SLAVE_ADDR  0x9  // Адрес I2C Slave
 #define BUFFER_SIZE     64    // Размер буфера
 
 volatile uint8_t i2c_buffer[BUFFER_SIZE];
 volatile uint8_t buffer_index = 0;
 
+I2C i2c(SERCOM5,PINMUX_PA22D_SERCOM5_PAD0,PINMUX_PA23D_SERCOM5_PAD1,true);
+Uart uart(SERCOM5, PA21, PA20, SERCOM_RX_PAD_1, UART_TX_PAD_0);
+
 void SERCOM5_Handler(void) {
-    if (I2C_Slave_ReceivedStartCondition(SERCOM5)) {
+    i2c.onService(); // Обработка прерываний I2C
+    if (i2c.available()) {
         buffer_index = 0;
-    }
-    
-    if (I2C_Slave_DataReady(SERCOM5)) {
-        if (buffer_index < BUFFER_SIZE) {
-            i2c_buffer[buffer_index++] = I2C_Slave_ReadByte(SERCOM5);
+        while (i2c.available() && buffer_index < BUFFER_SIZE) {
+            i2c_buffer[buffer_index++] = i2c.read();
         }
-    }
-    
-    if (I2C_Slave_ReceivedStopCondition(SERCOM5)) {
         switch_sercom5_to_uart();
     }
 }
 
 void switch_sercom5_to_uart() {
-    I2C_Disable(SERCOM5);
+    i2c.end(); // Отключаем I2C
     
-    UART_Init(SERCOM5, 9600, UART_TX_PA20_RX_PA21);
+    uart.begin(9600);
     
     for (uint8_t i = 0; i < buffer_index; i++) {
-        UART_Write(SERCOM5, i2c_buffer[i]);
+        uart.write(i2c_buffer[i]);
     }
     
     switch_sercom5_to_i2c();
 }
 
 void switch_sercom5_to_i2c() {
-    UART_Disable(SERCOM5);
+    uart.end(); // Отключаем UART
     
-    I2C_Slave_Init(SERCOM5, I2C_SLAVE_ADDR, I2C_SDA_PA22_SCL_PA23);
+    i2c.begin(I2C_SLAVE_ADDR);
 }
 
 int main(void) {
