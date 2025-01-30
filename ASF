@@ -13,47 +13,33 @@ volatile bool data_received = false;
 I2C i2c(SERCOM5);
 Uart uart(SERCOM5, PA21, PA20, SERCOM_RX_PAD_1, UART_TX_PAD_0);
 
-void SERCOM5_Handler(void) {
-    if (SERCOM5->I2CS.INTFLAG.bit.DRDY) {  // Данные готовы (I2C)
-        if (buffer_index < BUFFER_SIZE) {
-            i2c_buffer[buffer_index++] = SERCOM5->I2CS.DATA.reg;
-        }
-        SERCOM5->I2CS.INTFLAG.bit.DRDY = 1;
+void onI2CReceive(int count) {
+    buffer_index = 0;
+    while (i2c.available() && buffer_index < BUFFER_SIZE) {
+        i2c_buffer[buffer_index++] = i2c.read();
     }
-
-    if (SERCOM5->I2CS.INTFLAG.bit.PREC) {  // Stop Condition (I2C)
-        SERCOM5->I2CS.INTFLAG.bit.PREC = 1;
-        data_received = true;  // Устанавливаем флаг, что данные получены
-    }
+    data_received = true;
 }
 
-void disable_sercom5() {
-    SERCOM5->I2CS.CTRLA.bit.ENABLE = 0;
-    while (SERCOM5->I2CS.SYNCBUSY.bit.ENABLE);
-}
-
-void enable_uart() {
+void process_uart() {
     uart.begin(9600);
-}
-
-void send_uart_data() {
     for (uint8_t i = 0; i < buffer_index; i++) {
         uart.write(i2c_buffer[i]);
     }
     uart.write('\n');
+    uart.end();
+    i2c.setSlave(I2C_SLAVE_ADDR);
 }
 
 int main(void) {
     SystemInit();
-    i2c.setSlave(I2C_SLAVE_ADDR);  // Инициализация I2C в режиме Slave
-    NVIC_EnableIRQ(SERCOM5_IRQn);
+    i2c.setSlave(I2C_SLAVE_ADDR);
+    i2c.onReceive(onI2CReceive);
 
     while (1) {
         if (data_received) {
             data_received = false;
-            disable_sercom5();
-            enable_uart();
-            send_uart_data();
+            process_uart();
         }
     }
 }
