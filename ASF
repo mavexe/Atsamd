@@ -7,33 +7,35 @@ volatile uint8_t buffer_index = 0;
 I2C i2c(SERCOM5,PINMUX_PA22D_SERCOM5_PAD0,PINMUX_PA23D_SERCOM5_PAD1,true);
 Uart uart(SERCOM5, PA21, PA20, SERCOM_RX_PAD_1, UART_TX_PAD_0);
 
+void onI2CReceive(int count) {
+    buffer_index = 0;
+    while (i2c.available() && buffer_index < BUFFER_SIZE) {
+        i2c_buffer[buffer_index++] = i2c.read();
+    }
+    switch_sercom5_to_uart();
+}
+
 void SERCOM5_Handler(void) {
     i2c.onService(); // Обработка прерываний I2C
-    if (i2c.available()) {
-        buffer_index = 0;
-        while (i2c.available() && buffer_index < BUFFER_SIZE) {
-            i2c_buffer[buffer_index++] = i2c.read();
-        }
-        switch_sercom5_to_uart();
-    }
 }
 
 void switch_sercom5_to_uart() {
     i2c.end(); // Отключаем I2C
-    
     uart.begin(9600);
     
+    uart.print("I2C Data Received: ");
     for (uint8_t i = 0; i < buffer_index; i++) {
         uart.write(i2c_buffer[i]);
     }
+    uart.write('\n');
     
     switch_sercom5_to_i2c();
 }
 
 void switch_sercom5_to_i2c() {
     uart.end(); // Отключаем UART
-    
     i2c.begin(I2C_SLAVE_ADDR);
+    i2c.onReceive(onI2CReceive); // Привязываем обработчик
 }
 
 int main(void) {
