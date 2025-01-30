@@ -1,8 +1,3 @@
-#include "sam.h"
-#include "SERCOM.h"
-#include "i2c.h"
-#include "Uart.h"
-
 #define I2C_SLAVE_ADDR  0x09  // Адрес I2C Slave (0x9)
 #define BUFFER_SIZE     64    // Размер буфера
 
@@ -13,12 +8,20 @@ volatile bool data_received = false;
 I2C i2c(SERCOM5);
 Uart uart(SERCOM5, PA21, PA20, SERCOM_RX_PAD_1, UART_TX_PAD_0);
 
+// Функция приема данных от мастера
 void onI2CReceive(int count) {
     buffer_index = 0;
     while (i2c.available() && buffer_index < BUFFER_SIZE) {
         i2c_buffer[buffer_index++] = i2c.read();
     }
     data_received = true;
+}
+
+// Функция обработки запроса мастера (ЭХО-ответ)
+void onI2CRequest() {
+    for (uint8_t i = 0; i < buffer_index; i++) {
+        i2c.write(i2c_buffer[i]); // Отправляем полученные данные обратно
+    }
 }
 
 void process_uart() {
@@ -34,12 +37,7 @@ void process_uart() {
 int main(void) {
     SystemInit();
     i2c.setSlave(I2C_SLAVE_ADDR);
-    i2c.onReceive(onI2CReceive);
-
-    while (1) {
-        if (data_received) {
-            data_received = false;
-            process_uart();
-        }
-    }
+    
+    i2c.onReceive(onI2CReceive);  // Назначаем обработчик приема
+    i2c.onRequest(onI2CRequest);  // Назначаем обработчик запроса
 }
