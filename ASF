@@ -14,11 +14,6 @@ I2C i2c(SERCOM5);
 Uart uart(SERCOM5, PA21, PA20, SERCOM_RX_PAD_1, UART_TX_PAD_0);
 
 void SERCOM5_Handler(void) {
-    if (SERCOM5->I2CS.INTFLAG.bit.AMATCH) {  // Если Slave получил свой адрес
-        buffer_index = 0;  
-        SERCOM5->I2CS.INTFLAG.bit.AMATCH = 1;  
-    }
-
     if (SERCOM5->I2CS.INTFLAG.bit.DRDY) {  // Данные готовы (I2C)
         if (buffer_index < BUFFER_SIZE) {
             i2c_buffer[buffer_index++] = SERCOM5->I2CS.DATA.reg;
@@ -32,58 +27,33 @@ void SERCOM5_Handler(void) {
     }
 }
 
-void switch_sercom5_to_uart() {
-    // 1. Отключаем I2C
-    SERCOM5->I2CS.CTRLA.bit.ENABLE = 0;  
+void disable_sercom5() {
+    SERCOM5->I2CS.CTRLA.bit.ENABLE = 0;
     while (SERCOM5->I2CS.SYNCBUSY.bit.ENABLE);
+}
 
-    // 2. Переназначаем пины UART (PA20 TX, PA21 RX)
-    PORT->Group[0].PINCFG[20].bit.PMUXEN = 1;
-    PORT->Group[0].PMUX[20 >> 1].reg |= PORT_PMUX_PMUXE_D; // TX
-    PORT->Group[0].PINCFG[21].bit.PMUXEN = 1;
-    PORT->Group[0].PMUX[21 >> 1].reg |= PORT_PMUX_PMUXO_D; // RX
-
-    // 3. Настраиваем UART
+void enable_uart() {
     uart.begin(9600);
+}
 
-    // 4. Отправляем данные
-    uart.print("I2C data received: ");
+void send_uart_data() {
     for (uint8_t i = 0; i < buffer_index; i++) {
         uart.write(i2c_buffer[i]);
     }
     uart.write('\n');
-
-    for (volatile uint32_t delay = 0; delay < 500000; delay++);  // Короткая пауза для отладки
-    switch_sercom5_to_i2c();
-}
-
-void switch_sercom5_to_i2c() {
-    // 1. Отключаем UART
-    uart.end();
-    
-    // 2. Переназначаем пины I2C (PA22 SDA, PA23 SCL)
-    PORT->Group[0].PINCFG[22].bit.PMUXEN = 1;
-    PORT->Group[0].PMUX[22 >> 1].reg |= PORT_PMUX_PMUXE_C; // SDA
-    PORT->Group[0].PINCFG[23].bit.PMUXEN = 1;
-    PORT->Group[0].PMUX[23 >> 1].reg |= PORT_PMUX_PMUXO_C; // SCL
-
-    // 3. Запускаем I2C заново
-    i2c.setSlave(I2C_SLAVE_ADDR);
 }
 
 int main(void) {
     SystemInit();
-    switch_sercom5_to_i2c();
-    uart.begin(9600);  // UART запускаем сразу для логов
-    uart.print("System started\n");
-
-    NVIC_EnableIRQ(SERCOM5_IRQn);  // Включаем прерывания SERCOM5
+    i2c.setSlave(I2C_SLAVE_ADDR);  // Инициализация I2C в режиме Slave
+    NVIC_EnableIRQ(SERCOM5_IRQn);
 
     while (1) {
         if (data_received) {
-            uart.print("Switching to UART\n");
             data_received = false;
-            switch_sercom5_to_uart();
+            disable_sercom5();
+            enable_uart();
+            send_uart_data();
         }
     }
 }
