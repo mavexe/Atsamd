@@ -1,19 +1,8 @@
-void SERCOM5_Handler(void) {
-    uint8_t len_received = 0;  // Количество реально принятых байт
-
-    i2c_A.onService();  // Вызов обработчика событий I2C
-
-    // Чтение данных от мастера
+ uint8_t len_received = 0;
     int status = i2c_A.slave_read_packet_wait(rx_buf, BUFFER_SIZE, len_received);
-
+    
     if (status == 0) {
-        // Данные успешно приняты
-        SEGGER_RTT_printf(0, "Received %d bytes: ", len_received);
-        for (int i = 0; i < len_received; i++) {
-            SEGGER_RTT_printf(0, "%02X ", rx_buf[i]);  // Вывод данных
-        }
-        SEGGER_RTT_printf(0, "\n");
+        SEGGER_RTT_printf(0, "Received %d bytes\n", len_received);
     } else {
         SEGGER_RTT_printf(0, "Error receiving data: %d\n", status);
     }
-}
