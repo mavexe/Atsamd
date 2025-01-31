@@ -1,15 +1,29 @@
-uint8_t len_received = 0;  // Переменная, в которую запишется количество принятых байтов
-
-// Вызов функции slave_read_packet_wait
-int status = i2c_A.slave_read_packet_wait(rx_buf, BUFFER_SIZE, len_received);
-
-// Проверка на успешное выполнение
-if (status == 0) {
-    SEGGER_RTT_printf(0, "Received %d bytes\n", len_received);
-    // Дополнительная обработка данных
-    for (int i = 0; i < len_received; i++) {
-        SEGGER_RTT_printf(0, "%02X ", rx_buf[i]);  // Печать принятых данных
-    }
-} else {
-    SEGGER_RTT_printf(0, "Error receiving data: %d\n", status);
+int I2C::slave_write_packet_wait(uint8_t *buf, uint8_t len)
+{
+  	if(isMaster())setSlave(slaveAddr);
+	i2c_slave_wait_for_bus();
+	if (!(sercom->I2CS.STATUS.reg & SERCOM_I2CS_STATUS_DIR)) {
+		// Write request from master, send NACK and return
+		i2c_slave_set_ctrlb_ackact(false);
+		i2c_slave_set_ctrlb_cmd3();
+		return -1;
+	}	
+	i2c_slave_set_ctrlb_ackact(true);
+	i2c_slave_set_ctrlb_cmd3();  
+  	i2c_slave_wait_for_bus();
+	uint16_t i = 0;
+	uint16_t length = len;
+	while (length--) {
+	  	while (sercom->I2CS.STATUS.bit.SYNCBUSY){}
+		sercom->I2CS.DATA.reg = buf[i++];
+		i2c_slave_wait_for_bus();
+		if (sercom->I2CS.STATUS.reg & SERCOM_I2CS_STATUS_RXNACK &&	length !=0) {
+			// NACK from master, abort
+			// Release line
+			sercom->I2CS.CTRLB.reg |= SERCOM_I2CS_CTRLB_CMD(0x02);			
+			return -2;
+		}
+	}
+	sercom->I2CS.CTRLB.reg |= SERCOM_I2CS_CTRLB_CMD(0x02);	
+	return 0;
 }
