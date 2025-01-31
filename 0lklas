@@ -1,8 +1,15 @@
- uint8_t len_received = 0;
-    int status = i2c_A.slave_read_packet_wait(rx_buf, BUFFER_SIZE, len_received);
-    
-    if (status == 0) {
-        SEGGER_RTT_printf(0, "Received %d bytes\n", len_received);
-    } else {
-        SEGGER_RTT_printf(0, "Error receiving data: %d\n", status);
+uint8_t len_received = 0;  // Переменная, в которую запишется количество принятых байтов
+
+// Вызов функции slave_read_packet_wait
+int status = i2c_A.slave_read_packet_wait(rx_buf, BUFFER_SIZE, len_received);
+
+// Проверка на успешное выполнение
+if (status == 0) {
+    SEGGER_RTT_printf(0, "Received %d bytes\n", len_received);
+    // Дополнительная обработка данных
+    for (int i = 0; i < len_received; i++) {
+        SEGGER_RTT_printf(0, "%02X ", rx_buf[i]);  // Печать принятых данных
     }
+} else {
+    SEGGER_RTT_printf(0, "Error receiving data: %d\n", status);
+}
