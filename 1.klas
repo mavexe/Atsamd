@@ -1,68 +1,58 @@
-#include <asf.h>
+int I2C::slave_read_packet_wait(uint8_t *buf, uint8_t len_buf, uint8_t &len_in)
+{  
+  	if(isMaster())setSlave(slaveAddr);
+  	int status=i2c_slave_wait_for_bus();
+	if(status!=0)return status;
+	
+	if (!(sercom->I2CS.INTFLAG.reg & SERCOM_I2CS_INTFLAG_AMATCH)) {
+		/* Not address interrupt, something is wrong */
+		return -1;
+	}
 
-#define SLAVE_ADDR 0x09
-#define BUFFER_SIZE 32
-
-uint8_t tx_buffer[BUFFER_SIZE];  // Буфер для передачи данных
-uint8_t rx_buffer[BUFFER_SIZE];  // Буфер для получения данных
-
-// Функция настройки I2C в режиме слейва
-void configure_i2c_slave(void)
-{
-    struct i2c_slave_config config_slave;
-    i2c_slave_get_config_defaults(&config_slave);
-    
-    // Настройка адреса слейва
-    config_slave.address = SLAVE_ADDR;
-    
-    // Инициализация I2C
-    i2c_slave_init(&I2C_0, &config_slave);
-    
-    // Разрешение прерываний на I2C
-    i2c_slave_enable(&I2C_0);
-}
-
-// Прерывание, которое обрабатывает получение данных от мастера
-void i2c_slave_handler(void)
-{
-    if (i2c_slave_is_address_received(&I2C_0)) {
-        // Если адрес получен, начинаем принимать данные
-        uint8_t i = 0;
-        
-        while (i2c_slave_is_data_received(&I2C_0)) {
-            rx_buffer[i++] = i2c_slave_read(&I2C_0);
-            if (i >= BUFFER_SIZE) break;  // Если буфер переполнен
-        }
-
-        // Отправка полученных данных обратно
-        for (uint8_t j = 0; j < i; j++) {
-            i2c_slave_write(&I2C_0, rx_buffer[j]);
-        }
-    }
-}
-
-// Инициализация системы и I2C
-void system_init(void)
-{
-    // Инициализация системного тактирования
-    sysclk_init();
-    board_init();
-
-    // Инициализация I2C в режиме слейва
-    configure_i2c_slave();
-    
-    // Настройка обработчика прерываний для I2C
-    irq_register_handler(I2C_0_IRQn, i2c_slave_handler);
-    irq_enable(I2C_0_IRQn);
-}
-
-int main(void)
-{
-    // Инициализация системы и I2C
-    system_init();
-
-    while (1) {
-        // Основной цикл, слейв просто ждет команд
-        // Реализуем ожидание запросов и выполнение обработчиков
-    }
+	/* Check if there was an error in the last transfer */
+	if (sercom->I2CS.STATUS.reg & (SERCOM_I2CS_STATUS_BUSERR |
+			SERCOM_I2CS_STATUS_COLL | SERCOM_I2CS_STATUS_LOWTOUT)) {
+		return -2;
+	}	
+	
+	if ((sercom->I2CS.STATUS.reg & SERCOM_I2CS_STATUS_DIR)) {
+		// Write request from master, send NACK and return
+		i2c_slave_set_ctrlb_ackact(false);
+		i2c_slave_set_ctrlb_cmd3();
+		return -1;
+	}	
+	i2c_slave_set_ctrlb_ackact(true);
+	i2c_slave_set_ctrlb_cmd3();
+		
+	len_in = 0;
+	uint16_t length = len_buf;
+	while (length--) {
+	  	status=i2c_slave_wait_for_bus();
+		if (status != 0) {
+			// Timeout, return
+			return status;
+		}		
+		if ((sercom->I2CS.INTFLAG.reg & SERCOM_I2CS_INTFLAG_PREC) ||
+				sercom->I2CS.INTFLAG.reg & SERCOM_I2CS_INTFLAG_AMATCH) {
+			// Master sent stop condition, or repeated start, read done 
+			// Clear stop flag 
+			sercom->I2CS.INTFLAG.reg = SERCOM_I2CS_INTFLAG_PREC;
+			return 0;
+		}		
+		
+		// Read data 
+		while (sercom->I2CS.STATUS.bit.SYNCBUSY){}
+		buf[len_in++] = sercom->I2CS.DATA.reg;
+	}
+	i2c_slave_wait_for_bus();
+	if (sercom->I2CS.INTFLAG.reg & SERCOM_I2CS_INTFLAG_DRDY) {
+		// Buffer is full, send NACK 
+		i2c_slave_set_ctrlb_ackact(false);
+		sercom->I2CS.CTRLB.reg |= SERCOM_I2CS_CTRLB_CMD(0x2);
+	}
+	if (sercom->I2CS.INTFLAG.reg & SERCOM_I2CS_INTFLAG_PREC) {
+		/* Clear stop flag */
+		sercom->I2CS.INTFLAG.reg = SERCOM_I2CS_INTFLAG_PREC;
+	}
+	return 0;
 }
