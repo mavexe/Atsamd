@@ -1,52 +1,68 @@
 #include <asf.h>
-#include <string.h>
 
-#define SLAVE_ADDRESS 0x09
+#define SLAVE_ADDR 0x09
 #define BUFFER_SIZE 32
 
-uint8_t tx_buffer[BUFFER_SIZE];
-uint8_t rx_buffer[BUFFER_SIZE];
+uint8_t tx_buffer[BUFFER_SIZE];  // Буфер для передачи данных
+uint8_t rx_buffer[BUFFER_SIZE];  // Буфер для получения данных
 
-void configure_i2c_slave(void) {
+// Функция настройки I2C в режиме слейва
+void configure_i2c_slave(void)
+{
     struct i2c_slave_config config_slave;
-    
-    // Инициализация I2C слейва
     i2c_slave_get_config_defaults(&config_slave);
-    config_slave.address = SLAVE_ADDRESS;  // Устанавливаем адрес слейва
-    i2c_slave_init(&I2C_0, &config_slave);  // Инициализация порта I2C
-
-    // Разрешение прерываний
+    
+    // Настройка адреса слейва
+    config_slave.address = SLAVE_ADDR;
+    
+    // Инициализация I2C
+    i2c_slave_init(&I2C_0, &config_slave);
+    
+    // Разрешение прерываний на I2C
     i2c_slave_enable(&I2C_0);
 }
 
-void i2c_slave_callback_handler(void) {
+// Прерывание, которое обрабатывает получение данных от мастера
+void i2c_slave_handler(void)
+{
     if (i2c_slave_is_address_received(&I2C_0)) {
-        // Если мастер отправил запрос, начинаем обработку
-        if (i2c_slave_is_data_received(&I2C_0)) {
-            // Читаем данные от мастера в rx_buffer
-            uint8_t data = i2c_slave_read(&I2C_0);
-            // Отправляем данные обратно мастеру
-            i2c_slave_write(&I2C_0, data);
+        // Если адрес получен, начинаем принимать данные
+        uint8_t i = 0;
+        
+        while (i2c_slave_is_data_received(&I2C_0)) {
+            rx_buffer[i++] = i2c_slave_read(&I2C_0);
+            if (i >= BUFFER_SIZE) break;  // Если буфер переполнен
+        }
+
+        // Отправка полученных данных обратно
+        for (uint8_t j = 0; j < i; j++) {
+            i2c_slave_write(&I2C_0, rx_buffer[j]);
         }
     }
 }
 
-void i2c_slave_init(void) {
-    // Инициализация системы тактов и I2C
+// Инициализация системы и I2C
+void system_init(void)
+{
+    // Инициализация системного тактирования
     sysclk_init();
     board_init();
+
+    // Инициализация I2C в режиме слейва
     configure_i2c_slave();
     
-    // Настройка прерываний
-    irq_register_handler(I2C_0_IRQn, i2c_slave_callback_handler);
+    // Настройка обработчика прерываний для I2C
+    irq_register_handler(I2C_0_IRQn, i2c_slave_handler);
     irq_enable(I2C_0_IRQn);
 }
 
-int main(void) {
-    i2c_slave_init();  // Инициализация I2C слейва
+int main(void)
+{
+    // Инициализация системы и I2C
+    system_init();
 
     while (1) {
-        // Основной цикл работы слейва
-        // В этом цикле можно выполнить другие действия, если необходимо
+        // Основной цикл, слейв просто ждет команд
+        // Реализуем ожидание запросов и выполнение обработчиков
     }
 }
