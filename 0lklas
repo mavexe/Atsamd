@@ -1,29 +1,48 @@
-int I2C::slave_write_packet_wait(uint8_t *buf, uint8_t len)
-{
-  	if(isMaster())setSlave(slaveAddr);
-	i2c_slave_wait_for_bus();
-	if (!(sercom->I2CS.STATUS.reg & SERCOM_I2CS_STATUS_DIR)) {
-		// Write request from master, send NACK and return
-		i2c_slave_set_ctrlb_ackact(false);
-		i2c_slave_set_ctrlb_cmd3();
-		return -1;
-	}	
-	i2c_slave_set_ctrlb_ackact(true);
-	i2c_slave_set_ctrlb_cmd3();  
-  	i2c_slave_wait_for_bus();
-	uint16_t i = 0;
-	uint16_t length = len;
-	while (length--) {
-	  	while (sercom->I2CS.STATUS.bit.SYNCBUSY){}
-		sercom->I2CS.DATA.reg = buf[i++];
-		i2c_slave_wait_for_bus();
-		if (sercom->I2CS.STATUS.reg & SERCOM_I2CS_STATUS_RXNACK &&	length !=0) {
-			// NACK from master, abort
-			// Release line
-			sercom->I2CS.CTRLB.reg |= SERCOM_I2CS_CTRLB_CMD(0x02);			
-			return -2;
-		}
-	}
-	sercom->I2CS.CTRLB.reg |= SERCOM_I2CS_CTRLB_CMD(0x02);	
-	return 0;
+#include "SEGGER_RTT.h"
+#include "i2c.h"
+
+#define BUFFER_SIZE 10
+#define SLAVE_ADDR 0x09  // Адрес I2C слейва
+
+volatile uint8_t rx_buf[BUFFER_SIZE];  // Буфер для входящих данных
+volatile uint8_t data_length = 0;      // Количество принятых байтов
+
+I2C i2c_A(SERCOM5, PINMUX_PA22D_SERCOM5_PAD0, PINMUX_PA23D_SERCOM5_PAD1, true);
+
+void SERCOM5_Handler(void) {
+    uint8_t len_received = 0;
+
+    i2c_A.onService();  // Обработка прерываний
+
+    // Читаем данные от мастера
+    int status = i2c_A.slave_read_packet_wait((uint8_t*)rx_buf, BUFFER_SIZE, len_received);
+    
+    if (status == 0) {
+        data_length = len_received;  // Сохраняем длину полученных данных
+
+        // Лог в RTT
+        SEGGER_RTT_printf(0, "Received %d bytes: ", len_received);
+        for (int i = 0; i < len_received; i++) {
+            SEGGER_RTT_printf(0, "%02X ", rx_buf[i]);
+        }
+        SEGGER_RTT_printf(0, "\n");
+    }
+}
+
+void send_echo_response() {
+    if (data_length > 0) {
+        i2c_A.slave_write_packet_wait((uint8_t*)rx_buf, data_length);
+        data_length = 0;  // Сбрасываем длину данных после отправки
+    }
+}
+
+int main(void) {
+    SystemInit();
+    i2c_A.setSlave(SLAVE_ADDR);
+    
+    SEGGER_RTT_printf(0, "I2C Slave Echo Ready\n");
+
+    while (1) {
+        send_echo_response();  // Проверяем, если данные получены, отправляем их обратно
+    }
 }
