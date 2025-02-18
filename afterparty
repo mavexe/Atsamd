@@ -1,0 +1,80 @@
+#include "i2c.h"
+#include "Uart.h"
+#include "SEGGER_RTT.h"
+
+#define I2C_SLAVE_ADDRESS 0x42  // Адрес I2C slave
+#define UART_BAUDRATE 9600      // Скорость UART
+
+// Буфер для данных
+#define BUFFER_SIZE 128
+uint8_t dataBuffer[BUFFER_SIZE];
+uint8_t bufferIndex = 0;
+
+// Объекты для работы с I2C и UART
+I2C i2c(SERCOM0, PIN_PA22, PIN_PA23, true);  // I2C на SERCOM0, пины PA22 (SDA), PA23 (SCL)
+Uart uart(SERCOM0, PIN_PA20, PIN_PA21, SERCOM_RX_PAD_0, UART_TX_PAD_2);  // UART на SERCOM0, пины PA20 (RX), PA21 (TX)
+
+// Функция для переключения SERCOM в режим I2C
+void switchToI2C() {
+    // Остановка UART
+    uart.flush();
+    sercom->USART.CTRLA.bit.ENABLE = 0;  // Отключение UART
+
+    // Настройка SERCOM для I2C
+    i2c.setSlave(I2C_SLAVE_ADDRESS);
+    i2c.initClockNVIC();
+}
+
+// Функция для переключения SERCOM в режим UART
+void switchToUART() {
+    // Остановка I2C
+    i2c.reset();
+    sercom->I2CM.CTRLA.bit.ENABLE = 0;  // Отключение I2C
+
+    // Настройка SERCOM для UART
+    uart.begin(UART_BAUDRATE);
+}
+
+// Обработчик прерывания для I2C
+void I2C_Handler() {
+    if (i2c.slave_get_direction_wait() == 2) {  // Если мастер хочет записать данные
+        uint8_t len;
+        if (i2c.slave_read_packet_wait(dataBuffer, BUFFER_SIZE, len) == 0) {
+            bufferIndex = len;  // Сохраняем количество принятых байт
+        }
+    }
+}
+
+// Основной цикл
+void loop() {
+    // Переключение в режим I2C для приема данных
+    switchToI2C();
+
+    // Ожидание данных по I2C
+    while (bufferIndex == 0) {
+        // Ждем, пока данные не будут приняты
+    }
+
+    // Переключение в режим UART для передачи данных
+    switchToUART();
+
+    // Передача данных по UART
+    for (uint8_t i = 0; i < bufferIndex; i++) {
+        uart.write(dataBuffer[i]);
+    }
+
+    // Очистка буфера
+    bufferIndex = 0;
+}
+
+int main() {
+    // Инициализация I2C и UART
+    switchToI2C();
+
+    // Основной цикл
+    while (1) {
+        loop();
+    }
+
+    return 0;
+}
