@@ -1,19 +1,34 @@
 #include <atmel_start.h>
 #include <stdint.h>
+#include <string.h>
 
-// Функция для инициализации UART на SERCOM5
-void init_uart_sercom5() {
-    // Включаем тактирование для SERCOM5
-    PM->APBCMASK.reg |= PM_APBCMASK_SERCOM5;
+#define I2C_SLAVE_ADDR 0x9
+#define BUFFER_SIZE 128
 
+uint8_t buffer[BUFFER_SIZE];
+volatile uint8_t buffer_index = 0;
+volatile bool data_received = false;
+
+void SERCOM5_0_Handler(void) {
+    if (SERCOM5->I2CS.INTFLAG.bit.DRDY) {
+        buffer[buffer_index++] = SERCOM5->I2CS.DATA.bit.DATA;
+        if (buffer_index >= BUFFER_SIZE) {
+            buffer_index = 0; // Переполнение буфера
+        }
+        data_received = true;
+    }
+}
+
+void reset_sercom5_to_uart() {
+    // Сброс SERCOM5
+    SERCOM5->I2CS.CTRLA.bit.SWRST = 1;
+    while (SERCOM5->I2CS.CTRLA.bit.SWRST);
+
+    // Конфигурация SERCOM5 в режиме UART
     // Настройка пинов PA20 (RX) и PA21 (TX) для SERCOM5
     PORT->Group[0].PINCFG[20].reg = PORT_PINCFG_PMUXEN | PORT_PINCFG_INEN;
     PORT->Group[0].PINCFG[21].reg = PORT_PINCFG_PMUXEN;
     PORT->Group[0].PMUX[20 >> 1].reg = (PORT_PMUX_PMUXE_D | PORT_PMUX_PMUXO_D);
-
-    // Сброс SERCOM5
-    SERCOM5->USART.CTRLA.bit.SWRST = 1;
-    while (SERCOM5->USART.CTRLA.bit.SWRST);
 
     // Настройка UART
     SERCOM5->USART.CTRLA.reg = SERCOM_USART_CTRLA_MODE_USART_INT_CLK | // Внутренний генератор
@@ -34,21 +49,58 @@ void init_uart_sercom5() {
     while (SERCOM5->USART.SYNCBUSY.bit.ENABLE);
 }
 
-// Функция для отправки символа по UART
-void uart_send_char(char c) {
-    while (!SERCOM5->USART.INTFLAG.bit.DRE); // Ждем готовности передатчика
-    SERCOM5->USART.DATA.bit.DATA = c;
+void reset_sercom5_to_i2c() {
+    // Сброс SERCOM5
+    SERCOM5->USART.CTRLA.bit.SWRST = 1;
+    while (SERCOM5->USART.CTRLA.bit.SWRST);
+
+    // Конфигурация SERCOM5 в режиме I2C Slave
+    // Настройка пинов PA22 (SDA) и PA23 (SCL) для SERCOM5
+    PORT->Group[0].PINCFG[22].reg = PORT_PINCFG_PMUXEN | PORT_PINCFG_INEN;
+    PORT->Group[0].PINCFG[23].reg = PORT_PINCFG_PMUXEN | PORT_PINCFG_INEN;
+    PORT->Group[0].PMUX[22 >> 1].reg = (PORT_PMUX_PMUXE_C | PORT_PMUX_PMUXO_C);
+
+    // Настройка I2C Slave
+    SERCOM5->I2CS.CTRLA.reg = SERCOM_I2CS_CTRLA_MODE_I2C_SLAVE | // Режим I2C Slave
+                              SERCOM_I2CS_CTRLA_ENABLE;          // Включить I2C
+
+    SERCOM5->I2CS.ADDR.reg = SERCOM_I2CS_ADDR_ADDR(I2C_SLAVE_ADDR) | // Адрес устройства
+                             SERCOM_I2CS_ADDR_ADDRMASK(0);           // Маска адреса
+
+    // Включить прерывания
+    SERCOM5->I2CS.INTENSET.reg = SERCOM_I2CS_INTENSET_DRDY; // Прерывание при получении данных
+
+    // Включить SERCOM5
+    SERCOM5->I2CS.CTRLA.bit.ENABLE = 1;
+    while (SERCOM5->I2CS.SYNCBUSY.bit.ENABLE);
 }
 
-// Функция для отправки строки по UART
-void uart_send_string(const char *str) {
-    while (*str) {
-        uart_send_char(*str++);
+void send_buffer_via_uart() {
+    for (uint8_t i = 0; i < buffer_index; i++) {
+        while (!SERCOM5->USART.INTFLAG.bit.DRE); // Ждем готовности передатчика
+        SERCOM5->USART.DATA.bit.DATA = buffer[i];
     }
+    buffer_index = 0; // Сброс индекса буфера
 }
 
-// Функция для чтения символа из UART
-char uart_read_char() {
-    while (!SERCOM5->USART.INTFLAG.bit.RXC); // Ждем данных
-    return SERCOM5->USART.DATA.bit.DATA;
+int main(void) {
+    atmel_start_init();
+
+    // Инициализация I2C Slave
+    reset_sercom5_to_i2c();
+
+    while (1) {
+        if (data_received) {
+            data_received = false;
+
+            // Переключение в режим UART
+            reset_sercom5_to_uart();
+
+            // Передача данных по UART
+            send_buffer_via_uart();
+
+            // Возврат в режим I2C
+            reset_sercom5_to_i2c();
+        }
+    }
 }
