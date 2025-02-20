@@ -1,106 +1,41 @@
-#include <atmel_start.h>
-#include <stdint.h>
-#include <string.h>
+Copy
 
-#define I2C_SLAVE_ADDR 0x9
+#include "i2c.h"
+#include <stdint.h>
+
 #define BUFFER_SIZE 128
 
-uint8_t buffer[BUFFER_SIZE];
-volatile uint8_t buffer_index = 0;
-volatile bool data_received = false;
+// Буфер для хранения принятых данных
+uint8_t i2c_buffer[BUFFER_SIZE];
+uint8_t len_received = 0; // Количество принятых байт
 
-void SERCOM5_0_Handler(void) {
-    if (SERCOM5->I2CS.INTFLAG.bit.DRDY) {
-        buffer[buffer_index++] = SERCOM5->I2CS.DATA.bit.DATA;
-        if (buffer_index >= BUFFER_SIZE) {
-            buffer_index = 0; // Переполнение буфера
-        }
-        data_received = true;
+// Инициализация I2C на SERCOM5, пины PA22 (SDA), PA23 (SCL)
+I2C i2c(SERCOM5, PIN_PA22, PIN_PA23, true);
+
+// Callback-функция, которая будет вызвана при получении данных
+void onReceiveCallback(int bytesReceived) {
+    // Сохраняем количество принятых байт
+    len_received = bytesReceived;
+
+    // Чтение данных из буфера I2C
+    for (int i = 0; i < bytesReceived; i++) {
+        i2c_buffer[i] = i2c.rx_buf[i]; // rx_buf — это буфер, куда I2C сохраняет данные
+    }
+
+    // Пример обработки данных: отправка по UART
+    for (int i = 0; i < bytesReceived; i++) {
+        uart_send_char(i2c_buffer[i]); // Предположим, что у вас есть функция uart_send_char
     }
 }
 
-void reset_sercom5_to_uart() {
-    // Сброс SERCOM5
-    SERCOM5->I2CS.CTRLA.bit.SWRST = 1;
-    while (SERCOM5->I2CS.CTRLA.bit.SWRST);
-
-    // Конфигурация SERCOM5 в режиме UART
-    // Настройка пинов PA20 (RX) и PA21 (TX) для SERCOM5
-    PORT->Group[0].PINCFG[20].reg = PORT_PINCFG_PMUXEN | PORT_PINCFG_INEN;
-    PORT->Group[0].PINCFG[21].reg = PORT_PINCFG_PMUXEN;
-    PORT->Group[0].PMUX[20 >> 1].reg = (PORT_PMUX_PMUXE_D | PORT_PMUX_PMUXO_D);
-
-    // Настройка UART
-    SERCOM5->USART.CTRLA.reg = SERCOM_USART_CTRLA_MODE_USART_INT_CLK | // Внутренний генератор
-                                SERCOM_USART_CTRLA_DORD_LSB;           // Порядок бит: LSB first
-
-    SERCOM5->USART.CTRLB.reg = SERCOM_USART_CTRLB_RXEN |               // Включить приемник
-                                SERCOM_USART_CTRLB_TXEN |               // Включить передатчик
-                                SERCOM_USART_CTRLB_CHSIZE(0);          // 8 бит данных
-
-    // Настройка скорости передачи (9600 бод)
-    uint32_t baud_rate = 9600;
-    uint32_t f_gclk = 48000000; // Частота тактирования GCLK
-    uint16_t baud_value = (uint16_t)(65536 - (f_gclk / (16 * baud_rate)));
-    SERCOM5->USART.BAUD.reg = baud_value;
-
-    // Включить SERCOM5
-    SERCOM5->USART.CTRLA.bit.ENABLE = 1;
-    while (SERCOM5->USART.SYNCBUSY.bit.ENABLE);
-}
-
-void reset_sercom5_to_i2c() {
-    // Сброс SERCOM5
-    SERCOM5->USART.CTRLA.bit.SWRST = 1;
-    while (SERCOM5->USART.CTRLA.bit.SWRST);
-
-    // Конфигурация SERCOM5 в режиме I2C Slave
-    // Настройка пинов PA22 (SDA) и PA23 (SCL) для SERCOM5
-    PORT->Group[0].PINCFG[22].reg = PORT_PINCFG_PMUXEN | PORT_PINCFG_INEN;
-    PORT->Group[0].PINCFG[23].reg = PORT_PINCFG_PMUXEN | PORT_PINCFG_INEN;
-    PORT->Group[0].PMUX[22 >> 1].reg = (PORT_PMUX_PMUXE_C | PORT_PMUX_PMUXO_C);
-
-    // Настройка I2C Slave
-    SERCOM5->I2CS.CTRLA.reg = SERCOM_I2CS_CTRLA_MODE_I2C_SLAVE | // Режим I2C Slave
-                              SERCOM_I2CS_CTRLA_ENABLE;          // Включить I2C
-
-    SERCOM5->I2CS.ADDR.reg = SERCOM_I2CS_ADDR_ADDR(I2C_SLAVE_ADDR) | // Адрес устройства
-                             SERCOM_I2CS_ADDR_ADDRMASK(0);           // Маска адреса
-
-    // Включить прерывания
-    SERCOM5->I2CS.INTENSET.reg = SERCOM_I2CS_INTENSET_DRDY; // Прерывание при получении данных
-
-    // Включить SERCOM5
-    SERCOM5->I2CS.CTRLA.bit.ENABLE = 1;
-    while (SERCOM5->I2CS.SYNCBUSY.bit.ENABLE);
-}
-
-void send_buffer_via_uart() {
-    for (uint8_t i = 0; i < buffer_index; i++) {
-        while (!SERCOM5->USART.INTFLAG.bit.DRE); // Ждем готовности передатчика
-        SERCOM5->USART.DATA.bit.DATA = buffer[i];
-    }
-    buffer_index = 0; // Сброс индекса буфера
-}
-
-int main(void) {
-    atmel_start_init();
-
+void setup() {
     // Инициализация I2C Slave
-    reset_sercom5_to_i2c();
+    i2c.setSlave(0x9); // Установка адреса I2C Slave (0x9)
 
-    while (1) {
-        if (data_received) {
-            data_received = false;
+    // Регистрация callback-функции
+    i2c.onReceive(onReceiveCallback);
+}
 
-            // Переключение в режим UART
-            reset_sercom5_to_uart();
-
-            // Передача данных по UART
-            send_buffer_via_uart();
-
-            // Возврат в режим I2C
-            reset_sercom5_to_i2c();
-        }
-    }
+void loop() {
+    // Основной цикл может быть пустым, так как обработка данных происходит в callback-функции
 }
