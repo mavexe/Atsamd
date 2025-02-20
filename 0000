@@ -1,0 +1,54 @@
+#include <atmel_start.h>
+#include <stdint.h>
+
+// Функция для инициализации UART на SERCOM5
+void init_uart_sercom5() {
+    // Включаем тактирование для SERCOM5
+    PM->APBCMASK.reg |= PM_APBCMASK_SERCOM5;
+
+    // Настройка пинов PA20 (RX) и PA21 (TX) для SERCOM5
+    PORT->Group[0].PINCFG[20].reg = PORT_PINCFG_PMUXEN | PORT_PINCFG_INEN;
+    PORT->Group[0].PINCFG[21].reg = PORT_PINCFG_PMUXEN;
+    PORT->Group[0].PMUX[20 >> 1].reg = (PORT_PMUX_PMUXE_D | PORT_PMUX_PMUXO_D);
+
+    // Сброс SERCOM5
+    SERCOM5->USART.CTRLA.bit.SWRST = 1;
+    while (SERCOM5->USART.CTRLA.bit.SWRST);
+
+    // Настройка UART
+    SERCOM5->USART.CTRLA.reg = SERCOM_USART_CTRLA_MODE_USART_INT_CLK | // Внутренний генератор
+                                SERCOM_USART_CTRLA_DORD_LSB;           // Порядок бит: LSB first
+
+    SERCOM5->USART.CTRLB.reg = SERCOM_USART_CTRLB_RXEN |               // Включить приемник
+                                SERCOM_USART_CTRLB_TXEN |               // Включить передатчик
+                                SERCOM_USART_CTRLB_CHSIZE(0);          // 8 бит данных
+
+    // Настройка скорости передачи (9600 бод)
+    uint32_t baud_rate = 9600;
+    uint32_t f_gclk = 48000000; // Частота тактирования GCLK
+    uint16_t baud_value = (uint16_t)(65536 - (f_gclk / (16 * baud_rate)));
+    SERCOM5->USART.BAUD.reg = baud_value;
+
+    // Включить SERCOM5
+    SERCOM5->USART.CTRLA.bit.ENABLE = 1;
+    while (SERCOM5->USART.SYNCBUSY.bit.ENABLE);
+}
+
+// Функция для отправки символа по UART
+void uart_send_char(char c) {
+    while (!SERCOM5->USART.INTFLAG.bit.DRE); // Ждем готовности передатчика
+    SERCOM5->USART.DATA.bit.DATA = c;
+}
+
+// Функция для отправки строки по UART
+void uart_send_string(const char *str) {
+    while (*str) {
+        uart_send_char(*str++);
+    }
+}
+
+// Функция для чтения символа из UART
+char uart_read_char() {
+    while (!SERCOM5->USART.INTFLAG.bit.RXC); // Ждем данных
+    return SERCOM5->USART.DATA.bit.DATA;
+}
