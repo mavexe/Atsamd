@@ -1,0 +1,28 @@
+#include "Uart.h"
+
+// Определяем пины для UART
+#define UART_RX_PIN PIN_PA20  // RX на PA20 (PAD0)
+#define UART_TX_PIN PIN_PA21  // TX на PA21 (PAD2)
+
+// Указатель на SERCOM5
+Sercom *sercom5 = SERCOM5;
+
+// Создаем объект UART для SERCOM5
+Uart uart(sercom5, UART_RX_PIN, UART_TX_PIN, SERCOM_RX_PAD_0, UART_TX_PAD_2);
+
+void setup() {
+  // Инициализация UART на SERCOM5
+  uart.begin(9600);  // Настраиваем UART на скорость 9600 бод
+
+  // Вывод сообщения для проверки
+  uart.print("UART на SERCOM5 инициализирован!\n");
+}
+
+void loop() {
+  // Основной цикл
+  if (uart.available()) {
+    // Если есть данные на RX, читаем их и отправляем обратно (эхо)
+    char c = uart.read();
+    uart.write(c);
+  }
+}
