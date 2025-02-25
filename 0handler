@@ -1,0 +1,11 @@
+void SERCOM5_Handler() {
+    // Проверяем, есть ли прерывания для I2C
+    if (SERCOM5->I2CS.INTFLAG.reg != 0) {
+        i2c.onService();  // Обработчик прерываний для I2C
+    }
+
+    // Проверяем, есть ли прерывания для UART
+    if (SERCOM5->USART.INTFLAG.reg != 0) {
+        uart.IrqHandler();  // Обработчик прерываний для UART
+    }
+}
