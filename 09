@@ -6,7 +6,7 @@
 #define I2C_SDA_PIN PINMUX_PA22D_SERCOM5_PAD0
 #define I2C_SCL_PIN PINMUX_PA23D_SERCOM5_PAD1
 
-I2C i2c(SERCOM5, I2C_SDA_PIN, I2C_SCL_PIN, true);
+I2C i2c(SERCOM5,PINMUX_PA22D_SERCOM5_PAD0,PINMUX_PA23D_SERCOM5_PAD1,true);
 
 // Обработчик данных, полученных от мастера
 void onReceive(int len) {
