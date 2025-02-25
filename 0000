@@ -1,56 +1,16 @@
-#include "SEGGER_RTT.h"
-#include "i2c.h"
-#include "Uart.h"
-#include "sam.h"
-
 // Определяем пины для I2C
 #define I2C_SDA_PIN PINMUX_PA22D_SERCOM5_PAD0
 #define I2C_SCL_PIN PINMUX_PA23D_SERCOM5_PAD1
-
-// Определяем пины для UART
-#define UART_TX_PIN PIN_PA20  // TX на PA20 (PAD2)
-#define UART_RX_PIN PIN_PA21  // RX на PA21 (PAD3)
 
 // Буфер для хранения полученных данных
 #define MAX_RECEIVED_DATA_LEN 32
 uint8_t received_data[MAX_RECEIVED_DATA_LEN];
 uint8_t received_data_len = 0;
 
-// Инициализация I2C
 I2C i2c(SERCOM5, I2C_SDA_PIN, I2C_SCL_PIN, true);
 
-// Инициализация UART на уровне регистров
-void init_uart(void) {
-    // Включение тактирования для SERCOM5
-    PM->APBCMASK.reg |= PM_APBCMASK_SERCOM5;
-
-    // Настройка генератора SERCOM5 на 1 MHz
-    GCLK->CLKCTRL.reg = GCLK_CLKCTRL_ID(SERCOM5_GCLK_ID_CORE) |
-                        GCLK_CLKCTRL_CLKEN |
-                        GCLK_CLKCTRL_GEN(0); // Генератор 
-
-    // Настройка пинов PA20 (TX) и PA21 (RX) для работы с UART (SERCOM5)
-    PORT->Group[0].PINCFG[20].reg = PORT_PINCFG_PMUXEN; // Включение мультиплексирования для PA20 (TX)
-    PORT->Group[0].PINCFG[21].reg = PORT_PINCFG_PMUXEN; // Включение мультиплексирования для PA21 (RX)
-
-    PORT->Group[0].PMUX[10].reg = PORT_PMUX_PMUXE(2) | PORT_PMUX_PMUXO(2); // SERCOM5: PA20 (PAD[2]), PA21 (PAD[3])
-
-    // Конфигурация SERCOM5 для UART
-    SERCOM5->USART.CTRLA.reg = SERCOM_USART_CTRLA_MODE_USART_INT_CLK | // RC
-                               SERCOM_USART_CTRLA_DORD |              // Младший бит 
-                               (0x1 << SERCOM_USART_CTRLA_TXPO_Pos) | // TX на PAD[2] (PA20)
-                               (0x3 << SERCOM_USART_CTRLA_RXPO_Pos);  // RX на PAD[3] (PA21)
-
-    SERCOM5->USART.CTRLB.reg = SERCOM_USART_CTRLB_RXEN | // Включение приемника
-                               SERCOM_USART_CTRLB_TXEN; // Включение передатчика
-
-    // Установка скорости передачи данных (19200 бод при 1 MHz)
-    SERCOM5->USART.BAUD.reg = (1000000 / (16 * 19200)) - 1; 
-
-    SERCOM5->USART.CTRLA.reg |= SERCOM_USART_CTRLA_ENABLE;
-
-    SEGGER_RTT_printf(0, "UART initialized.\n");
-}
+SERCOM Sercom5 = SERCOM(SERCOM5);
+Uart uart(&Sercom5, PIN_PA20, PIN_PA21, SERCOM_RX_PAD_3, UART_TX_PAD_2);
 
 // Обработчик данных, полученных от мастера
 void onReceive(int len) {
@@ -69,13 +29,15 @@ void onReceive(int len) {
 
     // Сбрасываем SERCOM и перенастраиваем его для UART
     SERCOM5->USART.CTRLA.bit.ENABLE = 0;  // Отключаем UART
-    while (SERCOM5->USART.STATUS.bit.SYNCBUSY);  // Ждем завершения отключения
+    SEGGER_RTT_printf(0, "UART disabled.\n");
 
     SERCOM5->USART.CTRLA.bit.SWRST = 1;  // Сбрасываем SERCOM
     while (SERCOM5->USART.CTRLA.bit.SWRST);  // Ждем завершения сброса
+    SEGGER_RTT_printf(0, "SERCOM reset complete.\n");
 
     // Инициализируем UART
-    init_uart();
+    uart.begin(9600);  // Настраиваем UART на скорость 9600 бод
+    SEGGER_RTT_printf(0, "UART initialized at 9600 baud.\n");
 
     SEGGER_RTT_printf(0, "Received %d bytes. I2C slave disabled, UART enabled.\n", len);
 }
@@ -90,8 +52,7 @@ void send_data_via_uart() {
     if (received_data_len > 0) {
         SEGGER_RTT_printf(0, "Sending data via UART: ");
         for (int i = 0; i < received_data_len; i++) {
-            while (!SERCOM5->USART.INTFLAG.bit.DRE);  // Ждем, пока буфер передачи не станет пустым
-            SERCOM5->USART.DATA.reg = received_data[i];  // Отправка данных через UART
+            uart.write(received_data[i]);  // Отправка данных через UART
             SEGGER_RTT_printf(0, "%02X ", received_data[i]);  // Логирование данных
         }
         SEGGER_RTT_printf(0, "\n");
@@ -107,8 +68,13 @@ void delay() {
 
 int main() {
     SystemInit();
+    SEGGER_RTT_printf(0, "System initialized.\n");
+
     i2c.setSlave(0x09);  // Устанавливаем адрес slave
+    SEGGER_RTT_printf(0, "I2C slave set to address 0x09.\n");
+
     i2c.onReceive(onReceive);  // Устанавливаем обработчик данных
+    SEGGER_RTT_printf(0, "I2C receive handler set.\n");
 
     while (1) {
         // Если данные были получены, отправляем их через UART
