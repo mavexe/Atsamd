@@ -8,8 +8,8 @@
 #define I2C_SCL_PIN PINMUX_PA23D_SERCOM5_PAD1
 
 // Определяем пины для UART
-#define UART_RX_PIN PINMUX_PA20D_SERCOM5_PAD0  // RX на PA20 (PAD0)
-#define UART_TX_PIN PINMUX_PA21D_SERCOM5_PAD1  // TX на PA21 (PAD1)
+#define UART_RX_PIN PINMUX_PA20D_SERCOM5_PAD2  // RX на PA20 (PAD2)
+#define UART_TX_PIN PINMUX_PA21D_SERCOM5_PAD3  // TX на PA21 (PAD3)
 
 // Буфер для хранения полученных данных
 #define MAX_RECEIVED_DATA_LEN 32
@@ -17,7 +17,7 @@ uint8_t received_data[MAX_RECEIVED_DATA_LEN];
 uint8_t received_data_len = 0;
 
 I2C i2c(SERCOM5, I2C_SDA_PIN, I2C_SCL_PIN, true);
-Uart uart(SERCOM5, UART_RX_PIN, UART_TX_PIN, SERCOM_RX_PAD_0, UART_TX_PAD_2);
+Uart uart(SERCOM5, UART_RX_PIN, UART_TX_PIN, SERCOM_RX_PAD_2, UART_TX_PAD_0);
 
 // Обработчик данных, полученных от мастера
 void onReceive(int len) {
