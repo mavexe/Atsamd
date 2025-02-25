@@ -1,83 +1,38 @@
 #include "SEGGER_RTT.h"
 #include "i2c.h"
-#include "Uart.h"
 #include "sam.h"
 
-#include "Uart.h"
+// Определяем пины для I2C
+#define I2C_SDA_PIN PINMUX_PA22D_SERCOM5_PAD0
+#define I2C_SCL_PIN PINMUX_PA23D_SERCOM5_PAD1
 
-// Определяем пины для UART
-#define UART_RX_PIN PIN_PA20  // RX на PA20 (PAD0)
-#define UART_TX_PIN PIN_PA21  // TX на PA21 (PAD2)
-uint8_t len_received;
-// Указатель на SERCOM5
-//SERCOM sercom5 = SERCOM5;
+I2C i2c(SERCOM5, I2C_SDA_PIN, I2C_SCL_PIN, true);
 
-// Создаем объект UART для SERCOM5
-//Uart uart(&sercom5, UART_RX_PIN, UART_TX_PIN, SERCOM_RX_PAD_3,UART_TX_PAD_2);
-
-//void SERCOM5_Handler(){
-//	uart.available();
-//}
-
-void init_uart(void) {
-	// Включение тактирования дл SERCOM5
-	PM->APBCMASK.reg |= PM_APBCMASK_SERCOM5;
-
-	// Настройка генератора SERCOM5 на 1 MHz
-	GCLK->CLKCTRL.reg = GCLK_CLKCTRL_ID(SERCOM5_GCLK_ID_CORE) |
-	GCLK_CLKCTRL_CLKEN |
-	GCLK_CLKCTRL_GEN(0); // Генератор
-
-	// Настройка пинов PA20 и PA21 для работы с UART (SERCOM5)
-	PORT->Group[0].PINCFG[20].reg = PORT_PINCFG_PMUXEN; // Включение мультиплексирования для PA20
-	PORT->Group[0].PINCFG[21].reg = PORT_PINCFG_PMUXEN; // Включение мультиплексирования для PA21
-
-	PORT->Group[0].PMUX[10].reg = PORT_PMUX_PMUXE(2) | PORT_PMUX_PMUXO(2); // SERCOM5: PA20 (PAD[2]), PA21 (PAD[3])
-
-	// Конфигурация SERCOM5 для UART
-	SERCOM5->USART.CTRLA.reg = SERCOM_USART_CTRLA_MODE_USART_INT_CLK | // RC
-	SERCOM_USART_CTRLA_DORD |              // Младший бит
-	(0x3 << SERCOM_USART_CTRLA_RXPO_Pos) | // RX на PAD[3] (PA21)
-	(0x1 << SERCOM_USART_CTRLA_TXPO_Pos);  // TX на PAD[2] (PA20)
-
-	SERCOM5->USART.CTRLB.reg = SERCOM_USART_CTRLB_RXEN | // Включение приемника
-	SERCOM_USART_CTRLB_TXEN; // Включение передатчика
-
-	// Установка скорости передачи данных (19200 бод при 1 MHz)
-	//    SERCOM5->USART.BAUD.reg = (1000000 / (16 * 19200)) - 1;
-
-	SERCOM5->USART.CTRLA.reg |= SERCOM_USART_CTRLA_ENABLE;
+// Обработчик данных, полученных от мастера
+void onReceive(int len) {
+    SEGGER_RTT_printf(0, "Received %d bytes: ", len);
+    for (int i = 0; i < len; i++) {
+        SEGGER_RTT_printf(0, "%02X ", i2c.rx_buf[i]);
+    }
+    SEGGER_RTT_printf(0, "\n");
 }
 
-I2C i2c(SERCOM5,PINMUX_PA22D_SERCOM5_PAD0,PINMUX_PA23D_SERCOM5_PAD1,true);
-
-
-void SERCOM5_Handler(){
-	
-	i2c.onService();
-	i2c.slave_read_packet_wait(i2c.rx_buf,sizeof(i2c.rx_buf),len_received);
+void SERCOM5_Handler() {
+    i2c.onService();
 }
 
-
-void uart_echo(uint8_t data) {
-		SERCOM5->USART.DATA.reg = data; // Отправка данных обратно
+void delay() {
+    for (int i = 0; i < 100000; i++) {}
 }
 
-
-void delay(){
-	for(int i = 0;i<100000;i++){
-		
-	}
-}
 int main() {
-	SystemInit();
-	//init_uart();
-	i2c.setSlave(0x9);
-	i2c.slave_read_packet_wait(i2c.rx_buf,sizeof(i2c.rx_buf),len_received);
-	while(1){
-	delay();
-	SEGGER_RTT_printf(0, "Received %d bytes: ", len_received);
-	}
-	
-		return 0;
-	}
+    SystemInit();
+    i2c.setSlave(0x09);  // Устанавливаем адрес slave
+    i2c.onReceive(onReceive);  // Устанавливаем обработчик данных
+
+    while (1) {
+        delay();
+    }
+
+    return 0;
+}
