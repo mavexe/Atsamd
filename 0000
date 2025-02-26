@@ -11,18 +11,24 @@ void SERCOM5_Handler() {
     uart.IrqHandler();  // Обработчик прерываний для UART
 }
 
-void setup() {
+int main(void) {
+    // Инициализация системы
+    SystemInit();
+
     // Инициализация UART на скорости 9600 бод
     uart.begin(9600);
 
     // Вывод сообщения о готовности
     uart.print("Echo UART initialized. Send data to test.\n");
-}
 
-void loop() {
-    // Если есть данные для чтения, отправляем их обратно
-    if (uart.available()) {
-        char c = uart.read();  // Чтение данных
-        uart.write(c);         // Отправка данных обратно (эхо)
+    // Основной цикл программы
+    while (1) {
+        // Если есть данные для чтения, отправляем их обратно
+        if (uart.available()) {
+            char c = uart.read();  // Чтение данных
+            uart.write(c);         // Отправка данных обратно (эхо)
+        }
     }
+
+    return 0;  // Программа никогда не дойдет до этой строки
 }
