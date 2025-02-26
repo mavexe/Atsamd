@@ -1,28 +1,4 @@
-#include <stdarg.h>
-#include <stdio.h>
-#include <string.h>
-#include <errno.h>
-#include <stdint.h>
-
-// Реализация _sbrk
-extern uint32_t _end;  // Конец секции .bss
-extern uint32_t _estack;  // Начало стека
-
-void* _sbrk(intptr_t increment) {
-    static uint8_t* heap_end = (uint8_t*)&_end;  // Текущий конец кучи
-    uint8_t* prev_heap_end = heap_end;
-
-    // Проверка на переполнение кучи
-    if (heap_end + increment > (uint8_t*)&_estack) {
-        errno = ENOMEM;
-        return (void*)-1;
-    }
-
-    // Увеличиваем кучу
-    heap_end += increment;
-
-    return (void*)prev_heap_end;
-}
+#include "Uart.h"
 
 // Создаем объект SERCOM для SERCOM5
 SERCOM sercom5 = SERCOM(SERCOM5);
@@ -42,23 +18,36 @@ int main(void) {
     // Инициализация UART на скорости 9600 бод
     uart.begin(9600);
 
-    // Вывод сообщения о готовности
-    uart.write((uint8_t*)"UART initialized. Starting counter...\n", 37);
-
     // Переменная-счетчик
-    uint32_t counter = 0;
+    uint8_t counter = 1;
 
     // Основной цикл программы
     while (1) {
-        // Форматируем строку в буфер
-        char buffer[128];
-        int len = snprintf(buffer, sizeof(buffer), "Counter: %lu\n", counter);
+        // Преобразуем счетчик в строку
+        char buffer[4];  // Буфер для хранения строки (например, "1\n", "10\n")
+        int len;
+
+        if (counter < 10) {
+            len = 2;  // Однозначное число + символ новой строки
+            buffer[0] = '0' + counter;  // Преобразуем число в символ
+            buffer[1] = '\n';  // Символ новой строки
+        } else {
+            len = 3;  // Двузначное число + символ новой строки
+            buffer[0] = '1';  // Первая цифра (10)
+            buffer[1] = '0';  // Вторая цифра (10)
+            buffer[2] = '\n';  // Символ новой строки
+        }
 
         // Отправляем строку через UART
         uart.write((uint8_t*)buffer, len);
 
-        // Увеличиваем счетчик на 1
+        // Увеличиваем счетчик
         counter++;
+
+        // Сбрасываем счетчик, если он достиг 11
+        if (counter > 10) {
+            counter = 1;
+        }
 
         // Задержка 1 секунда
         for (volatile int i = 0; i < 1000000; i++);  // Простая задержка
