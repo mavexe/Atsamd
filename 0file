@@ -1,6 +1,5 @@
 #include "SEGGER_RTT.h"
 #include "i2c.h"
-#include "Uart.h"
 #include "sam.h"
 
 // Определяем пины для I2C
@@ -8,14 +7,12 @@
 #define I2C_SCL_PIN PINMUX_PA23D_SERCOM5_PAD1
 
 // Буфер для хранения полученных данных
-#define MAX_RECEIVED_DATA_LEN 1
+#define MAX_RECEIVED_DATA_LEN 32  // Увеличим буфер для хранения большего количества данных
 uint8_t received_data[MAX_RECEIVED_DATA_LEN];
 uint8_t received_data_len = 0;
 
+// Создаем объект I2C
 I2C i2c(SERCOM5, I2C_SDA_PIN, I2C_SCL_PIN, true);
-
-SERCOM Sercom5 = SERCOM(SERCOM5);
-Uart uart(&Sercom5, PIN_PA20, PIN_PA21, SERCOM_RX_PAD_3, UART_TX_PAD_2);
 
 // Обработчик данных, полученных от мастера
 void onReceive(int len) {
@@ -29,55 +26,20 @@ void onReceive(int len) {
     }
     received_data_len = len;
 
-    SEGGER_RTT_printf(0, "Received data: %d\n", received_data[0]);
-
-    // Отключаем I2C slave
-    i2c.reset();  // Сбрасываем модуль I2C
-
-    // Сбрасываем SERCOM и перенастраиваем его для UART
-    SERCOM5->USART.CTRLA.bit.ENABLE = 0;  // Отключаем UART
-    SEGGER_RTT_printf(0, "UART disabled.\n");
-
-    SERCOM5->USART.CTRLA.bit.SWRST = 1;  // Сбрасываем SERCOM
-    while (SERCOM5->USART.CTRLA.bit.SWRST);  // Ждем завершения сброса
-    SEGGER_RTT_printf(0, "SERCOM reset complete.\n");
-
-    // Инициализируем UART
-    uart.begin(9600);  // Настраиваем UART на скорость 9600 бод
-    SEGGER_RTT_printf(0, "UART initialized at 9600 baud.\n");
-
-    // Отправляем полученные данные через UART
-    send_data_via_uart();
-
-    // Сбрасываем SERCOM и перенастраиваем его для I2C slave
-    SERCOM5->USART.CTRLA.bit.ENABLE = 0;  // Отключаем UART
-    SEGGER_RTT_printf(0, "UART disabled.\n");
-
-    SERCOM5->USART.CTRLA.bit.SWRST = 1;  // Сбрасываем SERCOM
-    while (SERCOM5->USART.CTRLA.bit.SWRST);  // Ждем завершения сброса
-    SEGGER_RTT_printf(0, "SERCOM reset complete.\n");
-
-    // Инициализируем I2C slave
-    i2c.setSlave(0x09);  // Устанавливаем адрес slave
-    SEGGER_RTT_printf(0, "I2C slave reinitialized.\n");
-}
-
-// Обработчик прерываний I2C
-void SERCOM5_Handler() {
-    i2c.onService();
-}
-
-// Функция для передачи данных через UART
-void send_data_via_uart() {
-    if (received_data_len > 0) {
-        SEGGER_RTT_printf(0, "Sending data via UART: %d\n", received_data[0]);
-        uart.write(received_data[0]);  // Отправка данных через UART
-
-        // Очищаем буфер после отправки
-        received_data_len = 0;
+    // Выводим полученные данные через SEGGER RTT
+    SEGGER_RTT_printf(0, "Received data: ");
+    for (int i = 0; i < received_data_len; i++) {
+        SEGGER_RTT_printf(0, "%02X ", received_data[i]);  // Вывод в HEX формате
     }
+    SEGGER_RTT_printf(0, "\n");
 }
 
+// Обработчик прерываний для SERCOM5
+void SERCOM5_Handler() {
+    i2c.onService();  // Обработчик прерываний для I2C
+}
+
+// Задержка (простая реализация)
 void delay() {
     for (int i = 0; i < 100000; i++) {}
 }
@@ -86,16 +48,26 @@ int main() {
     SystemInit();
     SEGGER_RTT_printf(0, "System initialized.\n");
 
-    i2c.setSlave(0x09);  // Устанавливаем адрес slave
+    // Инициализация I2C в режиме slave с адресом 0x09
+    i2c.setSlave(0x09);
     SEGGER_RTT_printf(0, "I2C slave set to address 0x09.\n");
 
-    i2c.onReceive(onReceive);  // Устанавливаем обработчик данных
+    // Устанавливаем обработчик данных
+    i2c.onReceive(onReceive);
     SEGGER_RTT_printf(0, "I2C receive handler set.\n");
 
     while (1) {
-        // Если данные были получены, отправляем их через UART
+        // Основной цикл
         if (received_data_len > 0) {
-            send_data_via_uart();
+            // Если данные были получены, выводим их через RTT
+            SEGGER_RTT_printf(0, "Data received: ");
+            for (int i = 0; i < received_data_len; i++) {
+                SEGGER_RTT_printf(0, "%02X ", received_data[i]);  // Вывод в HEX формате
+            }
+            SEGGER_RTT_printf(0, "\n");
+
+            // Сбрасываем длину данных после обработки
+            received_data_len = 0;
         }
 
         delay();
