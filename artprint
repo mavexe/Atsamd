@@ -1,6 +1,5 @@
-#include "Uart.h"
-#include <stdarg.h>
 #include <stdio.h>
+#include <string.h>
 
 // Создаем объект SERCOM для SERCOM5
 SERCOM sercom5 = SERCOM(SERCOM5);
@@ -13,27 +12,6 @@ void SERCOM5_Handler() {
     uart.IrqHandler();  // Обработчик прерываний для UART
 }
 
-int Uart::print(const char* format, ...) {
-    char buffer[128];  // Статический буфер на 128 байт
-    va_list args;
-
-    // Инициализация списка аргументов
-    va_start(args, format);
-
-    // Форматирование строки в буфер
-    int len = vsnprintf(buffer, sizeof(buffer), format, args);
-
-    // Завершение работы с аргументами
-    va_end(args);
-
-    // Отправка форматированной строки через UART
-    if (len > 0) {
-        write((uint8_t*)buffer, len);
-    }
-
-    return len;  // Возвращаем количество отправленных байтов
-}
-
 int main(void) {
     // Инициализация системы
     SystemInit();
@@ -42,15 +20,19 @@ int main(void) {
     uart.begin(9600);
 
     // Вывод сообщения о готовности
-    uart.print("UART initialized. Starting counter...\n");
+    uart.write((uint8_t*)"UART initialized. Starting counter...\n", 37);
 
     // Переменная-счетчик
     uint32_t counter = 0;
 
     // Основной цикл программы
     while (1) {
-        // Выводим значение счетчика через UART
-        uart.print("Counter: %lu\n", counter);
+        // Форматируем строку в буфер
+        char buffer[128];
+        int len = snprintf(buffer, sizeof(buffer), "Counter: %lu\n", counter);
+
+        // Отправляем строку через UART
+        uart.write((uint8_t*)buffer, len);
 
         // Увеличиваем счетчик на 1
         counter++;
