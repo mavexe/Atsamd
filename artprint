@@ -41,5 +41,14 @@ int main(void) {
         for (volatile int i = 0; i < 1000000; i++);  // Простая задержка
     }
 
+
+int my_snprintf(char* buffer, size_t size, const char* format, ...) {
+    va_list args;
+    va_start(args, format);
+    int len = vsnprintf(buffer, size, format, args);
+    va_end(args);
+    return len;
+}
+
     return 0;  // Программа никогда не дойдет до этой строки
 }
