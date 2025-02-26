@@ -1,0 +1,20 @@
+int Uart::print(const char* format, ...) {
+    char buffer[128];  // Статический буфер на 128 байт
+    va_list args;
+
+    // Инициализация списка аргументов
+    va_start(args, format);
+
+    // Форматирование строки в буфер
+    int len = vsnprintf(buffer, sizeof(buffer), format, args);
+
+    // Завершение работы с аргументами
+    va_end(args);
+
+    // Отправка форматированной строки через UART
+    if (len > 0) {
+        write((uint8_t*)buffer, len);
+    }
+
+    return len;  // Возвращаем количество отправленных байтов
+}
