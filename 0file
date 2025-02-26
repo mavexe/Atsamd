@@ -7,7 +7,7 @@
 #define I2C_SCL_PIN PINMUX_PA23D_SERCOM5_PAD1
 
 // Буфер для хранения полученных данных
-#define MAX_RECEIVED_DATA_LEN 32  // Увеличим буфер для хранения большего количества данных
+#define MAX_RECEIVED_DATA_LEN 32
 uint8_t received_data[MAX_RECEIVED_DATA_LEN];
 uint8_t received_data_len = 0;
 
@@ -39,11 +39,6 @@ void SERCOM5_Handler() {
     i2c.onService();  // Обработчик прерываний для I2C
 }
 
-// Задержка (простая реализация)
-void delay() {
-    for (int i = 0; i < 100000; i++) {}
-}
-
 int main() {
     SystemInit();
     SEGGER_RTT_printf(0, "System initialized.\n");
@@ -58,19 +53,7 @@ int main() {
 
     while (1) {
         // Основной цикл
-        if (received_data_len > 0) {
-            // Если данные были получены, выводим их через RTT
-            SEGGER_RTT_printf(0, "Data received: ");
-            for (int i = 0; i < received_data_len; i++) {
-                SEGGER_RTT_printf(0, "%02X ", received_data[i]);  // Вывод в HEX формате
-            }
-            SEGGER_RTT_printf(0, "\n");
-
-            // Сбрасываем длину данных после обработки
-            received_data_len = 0;
-        }
-
-        delay();
+        // Ничего не делаем, всё обрабатывается в прерываниях
     }
 
     return 0;
