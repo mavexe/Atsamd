@@ -1,3 +1,18 @@
+#include "Uart.h"
+#include <stdarg.h>
+#include <stdio.h>
+
+// Создаем объект SERCOM для SERCOM5
+SERCOM sercom5 = SERCOM(SERCOM5);
+
+// Создаем объект UART для SERCOM5
+Uart uart(&sercom5, PIN_PA20, PIN_PA21, SERCOM_RX_PAD_3, UART_TX_PAD_2);
+
+// Обработчик прерываний для SERCOM5
+void SERCOM5_Handler() {
+    uart.IrqHandler();  // Обработчик прерываний для UART
+}
+
 int Uart::print(const char* format, ...) {
     char buffer[128];  // Статический буфер на 128 байт
     va_list args;
@@ -17,4 +32,32 @@ int Uart::print(const char* format, ...) {
     }
 
     return len;  // Возвращаем количество отправленных байтов
+}
+
+int main(void) {
+    // Инициализация системы
+    SystemInit();
+
+    // Инициализация UART на скорости 9600 бод
+    uart.begin(9600);
+
+    // Вывод сообщения о готовности
+    uart.print("UART initialized. Starting counter...\n");
+
+    // Переменная-счетчик
+    uint32_t counter = 0;
+
+    // Основной цикл программы
+    while (1) {
+        // Выводим значение счетчика через UART
+        uart.print("Counter: %lu\n", counter);
+
+        // Увеличиваем счетчик на 1
+        counter++;
+
+        // Задержка 1 секунда
+        for (volatile int i = 0; i < 1000000; i++);  // Простая задержка
+    }
+
+    return 0;  // Программа никогда не дойдет до этой строки
 }
