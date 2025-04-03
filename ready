@@ -5,7 +5,7 @@ void init_uart(void) {
     // Настройка генератора для SERCOM5 на 1 MHz
     GCLK->CLKCTRL.reg = GCLK_CLKCTRL_ID(SERCOM5_GCLK_ID_CORE) |
                         GCLK_CLKCTRL_CLKEN |
-                        GCLK_CLKCTRL_GEN(0); // Генератор 0
+                        GCLK_CLKCTRL_GEN(0); 
 
     // Настройка пинов PA20 и PA21 для работы с UART (SERCOM5)
     PORT->Group[0].PINCFG[20].reg = PORT_PINCFG_PMUXEN; // Включение мультиплексирования для PA20
