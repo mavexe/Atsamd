@@ -8,8 +8,8 @@ void init_uart(void) {
                         GCLK_CLKCTRL_GEN(0); 
 
     // Настройка пинов PA20 и PA21 для работы с UART (SERCOM5)
-    PORT->Group[0].PINCFG[20].reg = PORT_PINCFG_PMUXEN; // Включение мультиплексирования для PA20
-    PORT->Group[0].PINCFG[21].reg = PORT_PINCFG_PMUXEN; // Включение мультиплексирования для PA21
+    PORT->Group[0].PINCFG[20].reg = PORT_PINCFG_PMUXEN;
+    PORT->Group[0].PINCFG[21].reg = PORT_PINCFG_PMUXEN; 
 
     PORT->Group[0].PMUX[10].reg = PORT_PMUX_PMUXE(2) | PORT_PMUX_PMUXO(2); // SERCOM5: PA20 (PAD[2]), PA21 (PAD[3])
 
