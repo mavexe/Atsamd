@@ -1,0 +1,18 @@
+ls -l /usr/bin/python* /usr/local/bin/python*
+
+# 2. Проверим симлинки
+ls -l $(which python) $(which python3) 2>/dev/null
+
+# 3. Проверим альтернативы (если используется update-alternatives)
+update-alternatives --list python
+update-alternatives --list python3
+
+# 4. Поищем python3 в PATH
+echo $PATH
+which -a python3
+
+# 5. Проверим установленные пакеты Python
+apt list --installed | grep -E 'python3?\.[0-9]+'
+
+# 6. Проверим конкретно python3
+ls -l /usr/bin/python3* 2>/dev/null
