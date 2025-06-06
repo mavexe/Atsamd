@@ -38,7 +38,7 @@ void onI2CReceive(int bytesReceived) {
   }
 }
 
-// Функция для переключения SERCOM5 в режим UART и отправки данных
+
 void switchToUART() {
   // Отключаем I2C
   i2cSlave.sercom->I2CS.CTRLA.bit.ENABLE = 0;  // Отключаем I2C Slave
