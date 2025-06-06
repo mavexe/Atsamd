@@ -2,8 +2,7 @@
 #include "Uart.h"
 
 #define I2C_SLAVE_ADDRESS 0x09
-#define BUFFER_SIZE 128
-
+ 
 uint8_t rxBuffer[BUFFER_SIZE];  // Буфер для хранения данных, полученных по I2C
 uint8_t bufferIndex = 0;        // Индекс для заполнения буфера
 
