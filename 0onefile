@@ -13,7 +13,7 @@ I2C i2cSlave(SERCOM5, PIN_PA22, PIN_PA23, true);
 Uart uart(SERCOM5, PIN_PA20, PIN_PA21, SERCOM_RX_PAD_0, UART_TX_PAD_2);
 
 void setup() {
-  // Инициализация I2C Slave
+
   i2cSlave.setSlave(I2C_SLAVE_ADDRESS);
 
   // Настройка прерываний для I2C
