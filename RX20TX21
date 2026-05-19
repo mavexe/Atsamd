@@ -9,7 +9,6 @@ volatile uint8_t i2c_index = 0;
 
 void configure_i2c_slave(void) {
     struct i2c_slave_config config;
-    i2c_slave_get_config_defaults(&config);
 
     // Настраиваем адрес слейва
     config.address = I2C_SLAVE_ADDRESS;
