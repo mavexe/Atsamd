@@ -9,7 +9,6 @@ int I2C::slave_read_packet_wait(uint8_t *buf, uint8_t len_buf, uint8_t &len_in)
 		return -1;
 	}
 
-	/* Check if there was an error in the last transfer */
 	if (sercom->I2CS.STATUS.reg & (SERCOM_I2CS_STATUS_BUSERR |
 			SERCOM_I2CS_STATUS_COLL | SERCOM_I2CS_STATUS_LOWTOUT)) {
 		return -2;
