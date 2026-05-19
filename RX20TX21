@@ -55,10 +55,8 @@ int main(void) {
     SEGGER_RTT_Init();
     SEGGER_RTT_WriteString(0, "I2C Slave Initialized\n");
 
-    // Настраиваем I2C Slave
     configure_i2c_slave();
 
-    // Регистрируем callbacks
     configure_i2c_callbacks();
 
     // Основной цикл
