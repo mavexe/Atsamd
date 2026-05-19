@@ -28,13 +28,11 @@ void configure_uart(void) {
         // Ожидание завершения сброса
     }
 
-    // Настройка режима работы SERCOM5 в режиме USART
     SERCOM5->USART.CTRLA.reg = SERCOM_USART_CTRLA_MODE_USART_INT_CLK |
                                SERCOM_USART_CTRLA_RXPO(UART_RX_PAD) |
                                SERCOM_USART_CTRLA_TXPO(UART_TX_PAD) |
                                SERCOM_USART_CTRLA_DORD;
 
-    // Настройка скорости передачи
     uint64_t baud = (uint64_t)(65536 * (UART_CLK_FREQ - 16 * BAUD_RATE)) / UART_CLK_FREQ;
     SERCOM5->USART.BAUD.reg = (uint16_t)baud;
 
@@ -53,7 +51,6 @@ void configure_uart(void) {
 
 void uart_write(uint8_t data) {
     while (!(SERCOM5->USART.INTFLAG.bit.DRE)) {
-        // Ожидание готовности передатчика
     }
     SERCOM5->USART.DATA.reg = data;
 }
@@ -66,7 +63,7 @@ uint8_t uart_read(void) {
 }
 
 int main(void) {
-    // Инициализация системы
+
     SystemInit();
     configure_uart();
 
